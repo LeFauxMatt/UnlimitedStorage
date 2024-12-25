@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\FauxCore\FauxCommon\Common.targets" />
+  <Import Project="..\FauxCore\FauxCommon\FauxCommon.projitems" Label="Shared" />
+
+  <PropertyGroup>
+    <Name>Unlimited Storage</Name>
+    <Description>Makes storages hold unlimited items.</Description>
+    <Version>1.0.0-beta.1</Version>
+    <EnableHarmony>true</EnableHarmony>
+    <RootNamespace>LeFauxMods.UnlimitedStorage</RootNamespace>
+    <UniqueId>furyx639.UnlimitedStorage</UniqueId>
+    <UpdateKeys>GitHub:LeFauxMatt/UnlimitedStorage</UpdateKeys>
+    <RepositoryUrl>https://github.com/LeFauxMatt/UnlimitedStorage</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SMAPIDependency Include="spacechase0.GenericModConfigMenu" Version="1.14.1" required="false" />
+  </ItemGroup>
+
+</Project>
