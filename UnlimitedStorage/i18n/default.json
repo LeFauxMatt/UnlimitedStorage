@@ -1,0 +1,4 @@
+{
+  "config-option.make-chests-big.name": "Make Chests Big",
+  "config-option.make-chests-big.description": "Make all chests into big chests by default.",
+}

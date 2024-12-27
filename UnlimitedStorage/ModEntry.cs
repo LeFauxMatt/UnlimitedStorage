@@ -1,6 +1,8 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Reflection.Emit;
 using HarmonyLib;
+using LeFauxMods.Common.Integrations.GenericModConfigMenu;
+using LeFauxMods.Common.Services;
 using LeFauxMods.Common.Utilities;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -34,11 +36,17 @@ internal sealed class ModEntry : Mod
             downNeighborID = 69_420
         });
 
+    private ModConfig config = null!;
+    private ConfigHelper<ModConfig> configHelper = null!;
+
     /// <inheritdoc />
     public override void Entry(IModHelper helper)
     {
         // Init
-        Log.Init(this.Monitor);
+        I18n.Init(this.Helper.Translation);
+        this.configHelper = new ConfigHelper<ModConfig>(helper);
+        this.config = this.configHelper.Load();
+        Log.Init(this.Monitor, this.config);
 
         // Patches
         var harmony = new Harmony(this.ModManifest.UniqueID);
@@ -64,8 +72,10 @@ internal sealed class ModEntry : Mod
         // Events
         helper.Events.Display.MenuChanged += OnMenuChanged;
         helper.Events.Display.RenderedActiveMenu += this.OnRenderedActiveMenu;
+        helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
         helper.Events.Input.MouseWheelScrolled += this.OnMouseWheelScrolled;
+        helper.Events.World.ObjectListChanged += this.OnObjectListChanged;
     }
 
     private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result) =>
@@ -187,7 +197,7 @@ internal sealed class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (Columns.Value == 0 || e.Button is not (SButton.MouseLeft or SButton.ControllerA) ||
+        if (Columns.Value == 0 ||
             Game1.activeClickableMenu is not ItemGrabMenu
             {
                 ItemsToGrabMenu: { } inventoryMenu
@@ -199,6 +209,47 @@ internal sealed class ModEntry : Mod
         var maxRows = (int)Math.Ceiling((float)inventoryMenu.actualInventory.Count / Columns.Value) -
                       inventoryMenu.rows;
         if (maxRows <= 0)
+        {
+            return;
+        }
+
+        if (e.Button is SButton.DPadUp or SButton.LeftThumbstickUp && Offset.Value > 0)
+        {
+            if (itemGrabMenu.currentlySnappedComponent is not { } slot)
+            {
+                return;
+            }
+
+            var index = inventoryMenu.inventory.IndexOf(slot);
+            if (index == -1 || index >= Columns.Value)
+            {
+                return;
+            }
+
+            Offset.Value -= Columns.Value;
+            this.Helper.Input.Suppress(e.Button);
+            return;
+        }
+
+        if (e.Button is SButton.DPadDown or SButton.LeftThumbstickDown && Offset.Value < maxRows * Columns.Value)
+        {
+            if (itemGrabMenu.currentlySnappedComponent is not { } slot)
+            {
+                return;
+            }
+
+            var index = inventoryMenu.inventory.IndexOf(slot);
+            if (index == -1 || index < inventoryMenu.capacity - Columns.Value)
+            {
+                return;
+            }
+
+            Offset.Value += Columns.Value;
+            this.Helper.Input.Suppress(e.Button);
+            return;
+        }
+
+        if (e.Button is not (SButton.MouseLeft or SButton.ControllerA))
         {
             return;
         }
@@ -223,6 +274,33 @@ internal sealed class ModEntry : Mod
         Game1.playSound("drumkit6");
     }
 
+    private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
+    {
+        var gmcm = new GenericModConfigMenuIntegration(this.ModManifest, this.Helper.ModRegistry);
+        if (!gmcm.IsLoaded)
+        {
+            return;
+        }
+
+        var defaultConfig = new ModConfig();
+        var tempConfig = this.configHelper.Load();
+
+        gmcm.Register(
+            () => defaultConfig.CopyTo(tempConfig),
+            () =>
+            {
+                tempConfig.CopyTo(this.config);
+                this.configHelper.Save(tempConfig);
+            });
+
+        gmcm.Api.AddBoolOption(
+            this.ModManifest,
+            () => tempConfig.MakeChestsBig,
+            value => tempConfig.MakeChestsBig = value,
+            I18n.ConfigOption_MakeChestsBig_Name,
+            I18n.ConfigOption_MakeChestsBig_Description);
+    }
+
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
     {
         if (Columns.Value == 0 || Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } inventoryMenu })
@@ -238,6 +316,22 @@ internal sealed class ModEntry : Mod
         }
 
         Offset.Value += e.Delta > 0 ? -Columns.Value : Columns.Value;
+    }
+
+    private void OnObjectListChanged(object? sender, ObjectListChangedEventArgs e)
+    {
+        if (!this.config.MakeChestsBig)
+        {
+            return;
+        }
+
+        foreach (var (_, added) in e.Added)
+        {
+            if (added is Chest { playerChest.Value: true, SpecialChestType: Chest.SpecialChestTypes.None } chest)
+            {
+                chest.SpecialChestType = Chest.SpecialChestTypes.BigChest;
+            }
+        }
     }
 
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
