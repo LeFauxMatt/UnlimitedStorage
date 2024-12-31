@@ -1,4 +1,6 @@
 {
-  "config-option.make-chests-big.name": "Make Chests Big",
-  "config-option.make-chests-big.description": "Make all chests into big chests by default.",
+  "config-option.big-chests-menu.name": "Large Chest Menu",
+  "config-option.big-chests-menu.description": "Make the chest menu large by default.",
+  "config-option.make-unlimited.name": "Make Unlimited",
+  "config-option.make-unlimited.description":  "Make the chest type hold unlimited items."
 }

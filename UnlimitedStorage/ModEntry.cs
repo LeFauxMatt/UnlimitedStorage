@@ -2,14 +2,17 @@ using System.Globalization;
 using System.Reflection.Emit;
 using HarmonyLib;
 using LeFauxMods.Common.Integrations.GenericModConfigMenu;
+using LeFauxMods.Common.Models;
 using LeFauxMods.Common.Services;
 using LeFauxMods.Common.Utilities;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
+using StardewValley.GameData.BigCraftables;
 using StardewValley.Menus;
 using StardewValley.Objects;
+using StardewValley.TokenizableStrings;
 
 namespace LeFauxMods.UnlimitedStorage;
 
@@ -36,7 +39,7 @@ internal sealed class ModEntry : Mod
             downNeighborID = 69_420
         });
 
-    private ModConfig config = null!;
+    private static ModConfig config = null!;
     private ConfigHelper<ModConfig> configHelper = null!;
 
     /// <inheritdoc />
@@ -45,8 +48,8 @@ internal sealed class ModEntry : Mod
         // Init
         I18n.Init(this.Helper.Translation);
         this.configHelper = new ConfigHelper<ModConfig>(helper);
-        this.config = this.configHelper.Load();
-        Log.Init(this.Monitor, this.config);
+        config = this.configHelper.Load();
+        Log.Init(this.Monitor, config);
 
         // Patches
         var harmony = new Harmony(this.ModManifest.UniqueID);
@@ -54,6 +57,10 @@ internal sealed class ModEntry : Mod
         _ = harmony.Patch(
             AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)),
             postfix: new HarmonyMethod(typeof(ModEntry), nameof(Chest_GetActualCapacity_postfix)));
+
+        _ = harmony.Patch(
+            AccessTools.DeclaredPropertyGetter(typeof(Chest), nameof(Chest.SpecialChestType)),
+            postfix: new HarmonyMethod(typeof(ModEntry), nameof(Chest_SpecialChestType_postfix)));
 
         _ = harmony.Patch(
             AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
@@ -70,16 +77,37 @@ internal sealed class ModEntry : Mod
             transpiler: new HarmonyMethod(typeof(ModEntry), nameof(ItemGrabMenu_constructor_transpiler)));
 
         // Events
+        helper.Events.Content.AssetRequested += this.OnAssetRequested;
         helper.Events.Display.MenuChanged += OnMenuChanged;
         helper.Events.Display.RenderedActiveMenu += this.OnRenderedActiveMenu;
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
         helper.Events.Input.MouseWheelScrolled += this.OnMouseWheelScrolled;
-        helper.Events.World.ObjectListChanged += this.OnObjectListChanged;
+
+        ModEvents.Subscribe<ConfigChangedEventArgs<ModConfig>>(this.OnConfigChanged);
     }
 
-    private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result) =>
+    private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result)
+    {
+        if (!Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) ||
+            data.CustomFields?.GetBool(Constants.ModEnabled) != true)
+        {
+            return;
+        }
+
         __result = Math.Max(__result, __instance.GetItemsForPlayer().Count + 1);
+    }
+
+    private static void Chest_SpecialChestType_postfix(Chest __instance, ref Chest.SpecialChestTypes __result)
+    {
+        if (config.BigChestMenu &&
+            __result is Chest.SpecialChestTypes.None &&
+            Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
+            data.CustomFields?.GetBool(Constants.ModEnabled) == true)
+        {
+            __result = Chest.SpecialChestTypes.BigChest;
+        }
+    }
 
     private static int GetActualCapacity(int capacity, object? context) =>
         (context as Chest)?.SpecialChestType switch
@@ -155,7 +183,11 @@ internal sealed class ModEntry : Mod
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (e.NewMenu is not ItemGrabMenu { context: Chest, ItemsToGrabMenu: { } inventoryMenu } itemGrabMenu)
+        if (e.NewMenu is not ItemGrabMenu
+            {
+                sourceItem: Chest chest, ItemsToGrabMenu: { } inventoryMenu
+            } itemGrabMenu || !Game1.bigCraftableData.TryGetValue(chest.ItemId, out var data) ||
+            data.CustomFields?.GetBool(Constants.ModEnabled) != true)
         {
             Offset.Value = 0;
             Columns.Value = 0;
@@ -193,6 +225,32 @@ internal sealed class ModEntry : Mod
             inventoryMenu.inventory[inventoryMenu.capacity - 1].bounds.Center.Y - (6 * Game1.pixelZoom),
             11 * Game1.pixelZoom,
             12 * Game1.pixelZoom);
+    }
+
+    private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
+    {
+        if (!e.NameWithoutLocale.IsEquivalentTo(Constants.BigCraftableData))
+        {
+            return;
+        }
+
+
+        // Add config options to the data
+        e.Edit(asset =>
+            {
+                var allData = asset.AsDictionary<string, BigCraftableData>().Data;
+                foreach (var id in config.EnabledIds)
+                {
+                    if (!allData.TryGetValue(id, out var data))
+                    {
+                        continue;
+                    }
+
+                    data.CustomFields ??= new Dictionary<string, string>();
+                    data.CustomFields.Add(Constants.ModEnabled, "true");
+                }
+            },
+            AssetEditPriority.Late);
     }
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
@@ -274,6 +332,9 @@ internal sealed class ModEntry : Mod
         Game1.playSound("drumkit6");
     }
 
+    private void OnConfigChanged(ConfigChangedEventArgs<ModConfig> e) =>
+        this.Helper.GameContent.InvalidateCache(Constants.BigCraftableData);
+
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
     {
         var gmcm = new GenericModConfigMenuIntegration(this.ModManifest, this.Helper.ModRegistry);
@@ -289,16 +350,44 @@ internal sealed class ModEntry : Mod
             () => defaultConfig.CopyTo(tempConfig),
             () =>
             {
-                tempConfig.CopyTo(this.config);
-                this.configHelper.Save(tempConfig);
+                tempConfig.CopyTo(config);
+                this.configHelper.Save(config);
             });
 
         gmcm.Api.AddBoolOption(
             this.ModManifest,
-            () => tempConfig.MakeChestsBig,
-            value => tempConfig.MakeChestsBig = value,
-            I18n.ConfigOption_MakeChestsBig_Name,
-            I18n.ConfigOption_MakeChestsBig_Description);
+            () => tempConfig.BigChestMenu,
+            value => tempConfig.BigChestMenu = value,
+            I18n.ConfigOption_BigChestsMenu_Name,
+            I18n.ConfigOption_BigChestsMenu_Description);
+
+        gmcm.Api.AddSectionTitle(this.ModManifest, I18n.ConfigOption_MakeUnlimited_Name);
+        gmcm.Api.AddParagraph(this.ModManifest, I18n.ConfigOption_MakeUnlimited_Description);
+
+        foreach (var id in defaultConfig.EnabledIds)
+        {
+            if (!Game1.bigCraftableData.TryGetValue(id, out var data))
+            {
+                continue;
+            }
+
+            gmcm.Api.AddBoolOption(
+                this.ModManifest,
+                () => tempConfig.EnabledIds.Contains(id),
+                value =>
+                {
+                    if (value)
+                    {
+                        tempConfig.EnabledIds.Add(id);
+                    }
+                    else
+                    {
+                        tempConfig.EnabledIds.Remove(id);
+                    }
+                },
+                () => TokenParser.ParseText(data.DisplayName),
+                () => TokenParser.ParseText(data.Description));
+        }
     }
 
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
@@ -316,22 +405,6 @@ internal sealed class ModEntry : Mod
         }
 
         Offset.Value += e.Delta > 0 ? -Columns.Value : Columns.Value;
-    }
-
-    private void OnObjectListChanged(object? sender, ObjectListChangedEventArgs e)
-    {
-        if (!this.config.MakeChestsBig)
-        {
-            return;
-        }
-
-        foreach (var (_, added) in e.Added)
-        {
-            if (added is Chest { playerChest.Value: true, SpecialChestType: Chest.SpecialChestTypes.None } chest)
-            {
-                chest.SpecialChestType = Chest.SpecialChestTypes.BigChest;
-            }
-        }
     }
 
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
