@@ -4,7 +4,7 @@ using LeFauxMods.Common.Models;
 namespace LeFauxMods.UnlimitedStorage;
 
 /// <summary>Represents the mod configuration.</summary>
-internal sealed class ModConfig : IConfigWithLogAmount
+internal sealed class ModConfig : IConfigWithCopyTo<ModConfig>, IConfigWithLogAmount
 {
     /// <summary>Gets or sets a value indicating whether to make all chests big.</summary>
     public bool BigChestMenu { get; set; }
@@ -21,18 +21,23 @@ internal sealed class ModConfig : IConfigWithLogAmount
         "BigStoneChest"
     };
 
-    /// <inheritdoc />
-    public LogAmount LogAmount { get; set; }
+    /// <summary>Gets or sets a value indicating whether to enable scroll wheel.</summary>
+    public bool EnableScrolling { get; set; } = true;
 
-    /// <summary>
-    ///     Copies the values from this instance to another instance.
-    /// </summary>
-    /// <param name="other">The other config instance.</param>
+    /// <summary>Gets or sets a value indicating whether to show arrows.</summary>
+    public bool ShowArrows { get; set; } = true;
+
+    /// <inheritdoc />
     public void CopyTo(ModConfig other)
     {
+        other.LogAmount = this.LogAmount;
         other.BigChestMenu = this.BigChestMenu;
+        other.EnableScrolling = this.EnableScrolling;
+        other.ShowArrows = this.ShowArrows;
         other.EnabledIds.Clear();
         other.EnabledIds.UnionWith(this.EnabledIds);
-        other.LogAmount = this.LogAmount;
     }
+
+    /// <inheritdoc />
+    public LogAmount LogAmount { get; set; }
 }

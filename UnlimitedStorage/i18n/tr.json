@@ -1,6 +1,10 @@
 {
   "config-option.big-chests-menu.name": "Large Chest Menu",
   "config-option.big-chests-menu.description": "Make the chest menu large by default.",
+  "config-option.enable-scrolling.name": "Enable Scroll Wheel",
+  "config-option.enable-scrolling.description": "Enable the scrolling up and down the chest menu.",
   "config-option.make-unlimited.name": "Make Unlimited",
-  "config-option.make-unlimited.description": "Make the chest type hold unlimited items."
+  "config-option.make-unlimited.description": "Make the chest type hold unlimited items.",
+  "config-option.show-arrows.name": "Show Arrow Buttons",
+  "config-option.show-arrows.description": "Show the arrow buttons on the chest menu."
 }
