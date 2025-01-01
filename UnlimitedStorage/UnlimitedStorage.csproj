@@ -10,7 +10,7 @@
 		<EnableHarmony>true</EnableHarmony>
 		<RootNamespace>LeFauxMods.UnlimitedStorage</RootNamespace>
 		<UniqueId>furyx639.UnlimitedStorage</UniqueId>
-		<UpdateKeys>Nexus:30323,GitHub:LeFauxMatt/UnlimitedStorage</UpdateKeys>
+		<UpdateKeys>Nexus:30323, CurseForge:1169561, GitHub:LeFauxMatt/UnlimitedStorage</UpdateKeys>
 		<RepositoryUrl>https://github.com/LeFauxMatt/UnlimitedStorage</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 	</PropertyGroup>

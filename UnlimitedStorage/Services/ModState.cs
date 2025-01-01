@@ -72,14 +72,6 @@ internal sealed class ModState
 
     public static void Init(IModHelper helper) => Instance ??= new ModState(helper);
 
-    public static bool MatchesFilter(Item? item) =>
-        item is not null &&
-        (
-            item.DisplayName.Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
-            item.getDescription().Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
-            item.GetContextTags().Any(static tag => tag.Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase))
-        );
-
     public static bool TryGetMenu(
         [NotNullWhen(true)] out ItemGrabMenu? menu,
         [NotNullWhen(true)] out InventoryMenu? inventoryMenu,

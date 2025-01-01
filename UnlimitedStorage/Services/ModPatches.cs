@@ -18,10 +18,10 @@ internal static class ModPatches
 
     public static void Apply()
     {
+        Log.Info("Applying Patches");
+
         try
         {
-            Log.Info("Applying Patches");
-
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)),
                 postfix: new HarmonyMethod(typeof(ModPatches), nameof(Chest_GetActualCapacity_postfix)));
@@ -55,7 +55,7 @@ internal static class ModPatches
 
             _ = Harmony.Patch(
                 AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
-                    .Single(info => info.GetParameters().Length > 5),
+                    .Single(static info => info.GetParameters().Length > 5),
                 transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
         }
         catch

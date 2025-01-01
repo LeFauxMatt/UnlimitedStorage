@@ -53,6 +53,7 @@ internal sealed class ModConfig : IModConfig<ModConfig>, IConfigWithLogAmount
         other.EnabledIds.UnionWith(this.EnabledIds);
     }
 
+    /// <inheritdoc />
     public string GetSummary() =>
         new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"{nameof(this.BigChestMenu),25}: {this.BigChestMenu}")
