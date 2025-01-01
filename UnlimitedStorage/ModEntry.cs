@@ -1,277 +1,319 @@
-﻿using System.Globalization;
-using System.Reflection.Emit;
-using HarmonyLib;
+using LeFauxMods.Common.Models;
 using LeFauxMods.Common.Utilities;
+using LeFauxMods.UnlimitedStorage.Services;
+using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Events;
-using StardewModdingAPI.Utilities;
+using StardewValley.GameData.BigCraftables;
 using StardewValley.Menus;
-using StardewValley.Objects;
 
 namespace LeFauxMods.UnlimitedStorage;
 
 /// <inheritdoc />
 internal sealed class ModEntry : Mod
 {
-    private static readonly PerScreen<int> Columns = new();
-
-    private static readonly PerScreen<ClickableTextureComponent> DownArrow = new(() =>
-        new ClickableTextureComponent(Rectangle.Empty, Game1.mouseCursors, new Rectangle(421, 472, 11, 12),
-            Game1.pixelZoom)
-        {
-            myID = 69_420,
-            upNeighborID = 69_421
-        });
-
-    private static readonly PerScreen<int> Offset = new();
-
-    private static readonly PerScreen<ClickableTextureComponent> UpArrow = new(() =>
-        new ClickableTextureComponent(Rectangle.Empty, Game1.mouseCursors, new Rectangle(421, 459, 11, 12),
-            Game1.pixelZoom)
-        {
-            myID = 69_421,
-            downNeighborID = 69_420
-        });
-
     /// <inheritdoc />
     public override void Entry(IModHelper helper)
     {
         // Init
-        Log.Init(this.Monitor);
-
-        // Patches
-        var harmony = new Harmony(this.ModManifest.UniqueID);
-
-        _ = harmony.Patch(
-            AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)),
-            postfix: new HarmonyMethod(typeof(ModEntry), nameof(Chest_GetActualCapacity_postfix)));
-
-        _ = harmony.Patch(
-            AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
-                [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-            new HarmonyMethod(typeof(ModEntry), nameof(InventoryMenu_draw_prefix)));
-
-        _ = harmony.Patch(
-            AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
-                [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-            postfix: new HarmonyMethod(typeof(ModEntry), nameof(InventoryMenu_draw_postfix)));
-
-        _ = harmony.Patch(
-            AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu)).Single(info => info.GetParameters().Length > 5),
-            transpiler: new HarmonyMethod(typeof(ModEntry), nameof(ItemGrabMenu_constructor_transpiler)));
+        ModEvents.Subscribe<ConfigChangedEventArgs<ModConfig>>(this.OnConfigChanged);
+        I18n.Init(helper.Translation);
+        ModState.Init(helper);
+        Log.Init(this.Monitor, ModState.Config);
+        ModPatches.Apply();
 
         // Events
+        helper.Events.Content.AssetRequested += OnAssetRequested;
         helper.Events.Display.MenuChanged += OnMenuChanged;
-        helper.Events.Display.RenderedActiveMenu += this.OnRenderedActiveMenu;
+        helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
-        helper.Events.Input.MouseWheelScrolled += this.OnMouseWheelScrolled;
+        helper.Events.Input.ButtonsChanged += this.OnButtonsChanged;
     }
 
-    private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result) =>
-        __result = Math.Max(__result, __instance.GetItemsForPlayer().Count + 1);
-
-    private static int GetActualCapacity(int capacity, object? context) =>
-        (context as Chest)?.SpecialChestType switch
-        {
-            Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest => 9,
-            Chest.SpecialChestTypes.Enricher => 1,
-            Chest.SpecialChestTypes.BigChest => 70,
-            not null => 36,
-            _ => capacity
-        };
-
-    private static void InventoryMenu_draw_postfix(InventoryMenu __instance, ref IList<Item>? __state)
+    private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
     {
-        if (Columns.Value == 0 || __state is null ||
-            Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } inventoryMenu } ||
-            !ReferenceEquals(__instance, inventoryMenu))
+        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
         {
             return;
         }
 
-        __instance.actualInventory = __state;
+        ModState.Config.EnableSearch = !ModState.Config.EnableSearch;
+        this.Helper.Input.SuppressActiveKeybinds(ModState.Config.ToggleSearch);
     }
 
-    private static void InventoryMenu_draw_prefix(InventoryMenu __instance, ref IList<Item>? __state)
+    private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
-        if (Columns.Value == 0 ||
-            Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } inventoryMenu } ||
-            !ReferenceEquals(__instance, inventoryMenu))
+        if (!e.NameWithoutLocale.IsEquivalentTo(Constants.BigCraftableData))
         {
             return;
         }
 
-        var maxRows = (int)Math.Ceiling((float)__instance.actualInventory.Count / Columns.Value) - __instance.rows;
-        if (maxRows <= 0)
-        {
-            return;
-        }
-
-        Offset.Value = Math.Min(Math.Max(0, Offset.Value), maxRows * Columns.Value);
-
-        __state = __instance.actualInventory;
-        __instance.actualInventory = [.. __instance.actualInventory.Skip(Offset.Value).Take(__instance.capacity)];
-        var emptySlot = int.MaxValue.ToString(CultureInfo.InvariantCulture);
-
-        // Update name
-        for (var i = 0; i < __instance.inventory.Count; i++)
-        {
-            if (i >= __instance.actualInventory.Count || __instance.actualInventory[i] is not { } item)
+        // Add config options to the data
+        e.Edit(static asset =>
             {
-                __instance.inventory[i].name = emptySlot;
-                continue;
-            }
+                var allData = asset.AsDictionary<string, BigCraftableData>().Data;
+                foreach (var id in ModState.Config.EnabledIds)
+                {
+                    if (!allData.TryGetValue(id, out var data))
+                    {
+                        continue;
+                    }
 
-            __instance.inventory[i].name = __state.IndexOf(item).ToString(CultureInfo.InvariantCulture);
-        }
+                    data.CustomFields ??= [];
+                    data.CustomFields.Add(Constants.ModEnabled, "true");
+                }
+            },
+            AssetEditPriority.Late);
     }
-
-    private static IEnumerable<CodeInstruction>
-        ItemGrabMenu_constructor_transpiler(IEnumerable<CodeInstruction> instructions) =>
-        new CodeMatcher(instructions)
-            .MatchStartForward(
-                new CodeMatch(
-                    instruction => instruction.Calls(
-                        AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)))))
-            .Repeat(matcher =>
-                matcher
-                    .Advance(1)
-                    .InsertAndAdvance(
-                        new CodeInstruction(OpCodes.Ldarg_S, (short)16),
-                        CodeInstruction.Call(typeof(ModEntry), nameof(GetActualCapacity)))
-            )
-            .InstructionEnumeration();
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (e.NewMenu is not ItemGrabMenu { context: Chest, ItemsToGrabMenu: { } inventoryMenu } itemGrabMenu)
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) ||
+            !chest.IsEnabled())
         {
-            Offset.Value = 0;
-            Columns.Value = 0;
+            ModState.Offset = 0;
+            ModState.Columns = 0;
             return;
         }
 
-        if ((e.OldMenu as ItemGrabMenu)?.context == itemGrabMenu.context)
+        if ((e.OldMenu as ItemGrabMenu)?.context == menu.context)
         {
             return;
         }
 
-        Offset.Value = 0;
-        Columns.Value = inventoryMenu.capacity / inventoryMenu.rows;
+        ModState.Offset = 0;
+        ModState.Columns = inventoryMenu.capacity / inventoryMenu.rows;
 
-        // Align up arrow to top-right slot
-        var topSlot = inventoryMenu.inventory[Columns.Value - 1];
-        UpArrow.Value.rightNeighborID = topSlot.rightNeighborID;
-        UpArrow.Value.leftNeighborID = topSlot.myID;
-        topSlot.rightNeighborID = UpArrow.Value.myID;
+        if (ModState.Config.ShowArrows)
+        {
+            var topSlot = inventoryMenu.inventory[ModState.Columns - 1];
+            var bottomSlot = inventoryMenu.inventory[inventoryMenu.capacity - 1];
 
-        UpArrow.Value.bounds = new Rectangle(
-            inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8,
-            inventoryMenu.inventory[Columns.Value - 1].bounds.Center.Y - (6 * Game1.pixelZoom),
-            11 * Game1.pixelZoom,
-            12 * Game1.pixelZoom);
+            // Align up arrow to top-right slot
+            ModState.UpArrow.bounds.X = inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8;
+            ModState.UpArrow.bounds.Y =
+                inventoryMenu.inventory[ModState.Columns - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
+            ModState.UpArrow.rightNeighborID = topSlot.rightNeighborID;
+            ModState.UpArrow.leftNeighborID = topSlot.myID;
+            topSlot.rightNeighborID = SharedConstants.UpArrowId;
 
-        // Align down arrow to bottom-right slot
-        var bottomSlot = inventoryMenu.inventory[inventoryMenu.capacity - 1];
-        DownArrow.Value.rightNeighborID = bottomSlot.rightNeighborID;
-        DownArrow.Value.leftNeighborID = bottomSlot.myID;
-        bottomSlot.rightNeighborID = DownArrow.Value.myID;
+            // Align down arrow to bottom-right slot
+            ModState.DownArrow.bounds.X = inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8;
+            ModState.DownArrow.bounds.Y =
+                inventoryMenu.inventory[inventoryMenu.capacity - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
+            ModState.DownArrow.rightNeighborID = bottomSlot.rightNeighborID;
+            ModState.DownArrow.leftNeighborID = bottomSlot.myID;
+            bottomSlot.rightNeighborID = SharedConstants.DownArrowId;
 
-        DownArrow.Value.bounds = new Rectangle(
-            inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8,
-            inventoryMenu.inventory[inventoryMenu.capacity - 1].bounds.Center.Y - (6 * Game1.pixelZoom),
-            11 * Game1.pixelZoom,
-            12 * Game1.pixelZoom);
+            menu.allClickableComponents.Add(ModState.UpArrow);
+            menu.allClickableComponents.Add(ModState.DownArrow);
+        }
+
+        if (ModState.Config.EnableSearch)
+        {
+            var top = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top);
+            ModState.TextBox.Width = top[^1].bounds.Right - top[0].bounds.Left;
+            ModState.TextBox.X = top[0].bounds.Left;
+        }
+    }
+
+    private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
+    {
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        {
+            return;
+        }
+
+        var cursor = ModState.Cursor;
+        if (ModState.Config.ShowArrows)
+        {
+            var maxOffset = inventoryMenu.GetMaxOffset(chest);
+            ModState.UpArrow.tryHover(cursor.X, cursor.Y);
+            ModState.UpArrow.draw(
+                e.SpriteBatch,
+                ModState.Offset > 0 ? Color.White : Color.Gray * 0.8f,
+                1f);
+
+            ModState.DownArrow.tryHover(cursor.X, cursor.Y);
+            ModState.DownArrow.draw(
+                e.SpriteBatch,
+                ModState.Offset < maxOffset * ModState.Columns ? Color.White : Color.Gray * 0.8f,
+                1f);
+        }
+
+        if (ModState.Config.EnableSearch)
+        {
+            ModState.TextBox.Y = inventoryMenu.yPositionOnScreen - ModState.TextBox.Height - (13 * Game1.pixelZoom);
+
+            // Adjust for Chests Anywhere
+            if (this.Helper.ModRegistry.IsLoaded(Constants.ChestsAnywhereId))
+            {
+                ModState.TextBox.Y -= 52;
+
+                // Adjust for Color Picker
+                if (menu.chestColorPicker?.visible == true)
+                {
+                    ModState.TextBox.Y -= Game1.tileSize;
+                }
+            }
+            else
+            {
+                // Adjust for Color Picker
+                if (menu.chestColorPicker?.visible == true)
+                {
+                    ModState.TextBox.Y += 2 * Game1.pixelZoom;
+                }
+            }
+
+            // Adjust for Large Chest
+            if (inventoryMenu.rows >= 5)
+            {
+                ModState.TextBox.Y += 5 * Game1.pixelZoom;
+            }
+
+            ModState.TextBox.Hover(cursor.X, cursor.Y);
+            ModState.TextBox.Draw(e.SpriteBatch, false);
+        }
+
+        menu.drawMouse(e.SpriteBatch);
     }
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (Columns.Value == 0 || e.Button is not (SButton.MouseLeft or SButton.ControllerA) ||
-            Game1.activeClickableMenu is not ItemGrabMenu
-            {
-                ItemsToGrabMenu: { } inventoryMenu
-            } itemGrabMenu)
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
         {
             return;
         }
 
-        var maxRows = (int)Math.Ceiling((float)inventoryMenu.actualInventory.Count / Columns.Value) -
-                      inventoryMenu.rows;
-        if (maxRows <= 0)
+        var cursor = ModState.Cursor;
+        var maxOffset = ModState.Columns == 0 ? 0 : inventoryMenu.GetMaxOffset(chest);
+        switch (e.Button)
         {
-            return;
-        }
+            case SButton.DPadUp or SButton.LeftThumbstickUp when maxOffset > 0:
+                if (ModState.TryMoveUp(menu, inventoryMenu))
+                {
+                    this.Helper.Input.Suppress(e.Button);
+                }
 
-        var cursor = Utility.ModifyCoordinatesForUIScale(e.Cursor.GetScaledScreenPixels()).ToPoint();
-        if (Offset.Value > 0 && UpArrow.Value.containsPoint(cursor.X, cursor.Y))
-        {
-            UpArrow.Value.scale = 3f;
-            Offset.Value -= Columns.Value;
-        }
-        else if (Offset.Value < maxRows * Columns.Value && DownArrow.Value.containsPoint(cursor.X, cursor.Y))
-        {
-            DownArrow.Value.scale = 3f;
-            Offset.Value += Columns.Value;
-        }
-        else
-        {
-            return;
-        }
+                return;
 
-        this.Helper.Input.Suppress(e.Button);
-        Game1.playSound("drumkit6");
+            case SButton.DPadDown or SButton.LeftThumbstickDown when maxOffset > 0:
+                if (ModState.TryMoveDown(menu, inventoryMenu, maxOffset))
+                {
+                    this.Helper.Input.Suppress(e.Button);
+                }
+
+                return;
+
+            // Press up button
+            case SButton.MouseLeft or SButton.ControllerA
+                when ModState.Config.ShowArrows && ModState.UpArrow.containsPoint(cursor.X, cursor.Y):
+                if (ModState.Offset <= 0)
+                {
+                    return;
+                }
+
+                ModState.UpArrow.scale = 3f;
+                ModState.Offset -= ModState.Columns;
+                this.Helper.Input.Suppress(e.Button);
+                _ = Game1.playSound("drumkit6");
+                return;
+
+            // Press down button
+            case SButton.MouseLeft or SButton.ControllerA
+                when ModState.Config.ShowArrows && ModState.DownArrow.containsPoint(cursor.X, cursor.Y):
+                if (ModState.Offset >= maxOffset * ModState.Columns)
+                {
+                    return;
+                }
+
+                ModState.DownArrow.scale = 3f;
+                ModState.Offset += ModState.Columns;
+                this.Helper.Input.Suppress(e.Button);
+                _ = Game1.playSound("drumkit6");
+                return;
+
+            // Select search bar
+            case SButton.MouseLeft when ModState.Config.EnableSearch:
+                ModState.TextBox.Selected = cursor.X >= ModState.TextBox.X &&
+                                            cursor.X <= ModState.TextBox.X + ModState.TextBox.Width &&
+                                            cursor.Y >= ModState.TextBox.Y &&
+                                            cursor.Y <= ModState.TextBox.Y + ModState.TextBox.Height;
+                return;
+
+            // Clear search bar
+            case SButton.MouseRight when ModState.Config.EnableSearch:
+                ModState.TextBox.Selected = cursor.X >= ModState.TextBox.X &&
+                                            cursor.X <= ModState.TextBox.X + ModState.TextBox.Width &&
+                                            cursor.Y >= ModState.TextBox.Y &&
+                                            cursor.Y <= ModState.TextBox.Y + ModState.TextBox.Height;
+                if (ModState.TextBox.Selected)
+                {
+                    ModState.TextBox.Text = string.Empty;
+                }
+
+                return;
+
+            // Deselect search bar
+            case SButton.ControllerB when ModState.Config.EnableSearch:
+                ModState.TextBox.Selected = false;
+                return;
+
+            case SButton.Escape:
+                if (!menu.readyToClose())
+                {
+                    return;
+                }
+
+                this.Helper.Input.Suppress(e.Button);
+                Game1.playSound("bigDeSelect");
+                menu.exitThisMenu();
+                return;
+
+            case not (SButton.LeftShift
+                or SButton.RightShift
+                or SButton.LeftAlt
+                or SButton.RightAlt
+                or SButton.LeftControl
+                or SButton.RightControl) when ModState.TextBox.Selected:
+                this.Helper.Input.Suppress(e.Button);
+                return;
+        }
     }
+
+    private void OnConfigChanged(ConfigChangedEventArgs<ModConfig> e)
+    {
+        _ = this.Helper.GameContent.InvalidateCache(Constants.BigCraftableData);
+        this.Helper.Events.Display.RenderedActiveMenu -= this.OnRenderedActiveMenu;
+        this.Helper.Events.Input.MouseWheelScrolled -= this.OnMouseWheelScrolled;
+
+        if (e.Config.EnableScrolling)
+        {
+            this.Helper.Events.Input.MouseWheelScrolled += this.OnMouseWheelScrolled;
+        }
+
+        if (e.Config.ShowArrows || e.Config.EnableSearch)
+        {
+            this.Helper.Events.Display.RenderedActiveMenu += this.OnRenderedActiveMenu;
+        }
+    }
+
+    private void OnGameLaunched(object? sender, GameLaunchedEventArgs e) =>
+        _ = new ConfigMenu(this.Helper, this.ModManifest);
 
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
     {
-        if (Columns.Value == 0 || Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } inventoryMenu })
+        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) || !chest.IsEnabled())
         {
             return;
         }
 
-        var cursor = Utility.ModifyCoordinatesForUIScale(this.Helper.Input.GetCursorPosition().GetScaledScreenPixels())
-            .ToPoint();
+        var cursor = ModState.Cursor;
         if (!inventoryMenu.isWithinBounds(cursor.X, cursor.Y))
         {
             return;
         }
 
-        Offset.Value += e.Delta > 0 ? -Columns.Value : Columns.Value;
-    }
-
-    private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
-    {
-        if (Columns.Value == 0 || Game1.activeClickableMenu is not ItemGrabMenu
-            {
-                ItemsToGrabMenu: { } inventoryMenu
-            } itemGrabMenu)
-        {
-            return;
-        }
-
-        var maxRows = (int)Math.Ceiling((float)inventoryMenu.actualInventory.Count / Columns.Value) -
-                      inventoryMenu.rows;
-        if (maxRows <= 0)
-        {
-            return;
-        }
-
-        var cursor = Utility.ModifyCoordinatesForUIScale(this.Helper.Input.GetCursorPosition().GetScaledScreenPixels())
-            .ToPoint();
-
-        if (Offset.Value > 0)
-        {
-            UpArrow.Value.tryHover(cursor.X, cursor.Y);
-            UpArrow.Value.draw(e.SpriteBatch);
-        }
-
-        if (Offset.Value < maxRows * Columns.Value)
-        {
-            DownArrow.Value.tryHover(cursor.X, cursor.Y);
-            DownArrow.Value.draw(e.SpriteBatch);
-        }
-
-        itemGrabMenu.drawMouse(e.SpriteBatch);
+        ModState.Offset += e.Delta > 0 ? -ModState.Columns : ModState.Columns;
     }
 }
