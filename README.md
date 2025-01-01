@@ -1,35 +1,58 @@
 # Unlimited Storage
 
-Stardew Valley mod which makes chests hold unlimited items.
+Stardew Valley mod which allows chests to hold unlimited items.
 
 ## Contents
 
 - [Unlimited Storage](#unlimited-storage)
   - [Contents](#contents)
   - [Configurations](#configurations)
+  - [Features](#features)
+  - [Integration](#integration)
   - [Translations](#translations)
+
 
 ## Configurations
 
 For ease of use, it is recommended to set config options
 from [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098).
 
-<table>
-<thead>
-<tr>
-<th>Config Option</th>
-<th>Description</th>
-<th>Type</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>MakeChestsBig</td>
-<td>Makes all chests into large chests using the 70 slot UI. Default <code>false</code>.</td>
-<td>Boolean</td>
-</tr>
-</tbody>
-</table>
+![Config Menu](docs/config-menu.png)
+
+## Features
+
+Chests can hold unlimited items.
+
+![Make Unlimited](docs/make-unlimited.png)
+
+Make the chest menu large by default.
+
+![Big Chests Menu](docs/big-chests-menu.png)
+
+Search for items.
+
+![Enable Search](docs/enable-search.png)
+
+## Integration
+
+Target the chest at `Data/BigCraftables`.
+
+Add `furyx639.UnlimitedStorage/Enabled` to custom fields:
+
+```json
+{
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/BigCraftables",
+      "TargetField": [ "YourChest.Id", "CustomFields" ],
+      "Entries": {
+        "furyx639.UnlimitedStorage/Enabled": "true"
+      }
+    }
+  ]
+}
+```
 
 ## Translations
 

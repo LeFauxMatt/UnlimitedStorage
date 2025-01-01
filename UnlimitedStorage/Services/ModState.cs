@@ -1,5 +1,7 @@
 using LeFauxMods.Common.Services;
+using LeFauxMods.Common.Utilities;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Utilities;
 using StardewValley.Menus;
 using StardewValley.Objects;
@@ -7,35 +9,36 @@ using StardewValley.Objects;
 namespace LeFauxMods.UnlimitedStorage.Services;
 
 /// <summary>Responsible for managing state.</summary>
-internal sealed class StateManager
+internal sealed class ModState
 {
-    private static StateManager? Instance;
+    private static ModState? Instance;
 
     private readonly PerScreen<int> columns = new();
-
     private readonly ConfigHelper<ModConfig> configHelper;
 
-    private readonly PerScreen<ClickableTextureComponent> downArrow = new(() => new ClickableTextureComponent(
-        Rectangle.Empty, Game1.mouseCursors, new Rectangle(421, 472, 11, 12),
-        Game1.pixelZoom)
-    {
-        myID = 69_420,
-        upNeighborID = 69_421
-    });
+    private readonly PerScreen<ClickableTextureComponent> downArrow = new(static () =>
+        new ClickableTextureComponent(
+            new Rectangle(0, 0, 11 * Game1.pixelZoom, 12 * Game1.pixelZoom), Game1.mouseCursors,
+            new Rectangle(421, 472, 11, 12),
+            Game1.pixelZoom) { myID = SharedConstants.DownArrowId, upNeighborID = SharedConstants.UpArrowId });
 
     private readonly IModHelper helper;
-
     private readonly PerScreen<int> offset = new();
 
-    private readonly PerScreen<ClickableTextureComponent> upArrow = new(() => new ClickableTextureComponent(
-        Rectangle.Empty, Game1.mouseCursors, new Rectangle(421, 459, 11, 12),
-        Game1.pixelZoom)
-    {
-        myID = 69_421,
-        downNeighborID = 69_420
-    });
+    private readonly PerScreen<TextBox> textBox = new(static () =>
+        new TextBox(
+            Game1.content.Load<Texture2D>("LooseSprites/textBox"),
+            null,
+            Game1.smallFont,
+            Game1.textColor) { limitWidth = false });
 
-    private StateManager(IModHelper helper)
+    private readonly PerScreen<ClickableTextureComponent> upArrow = new(static () =>
+        new ClickableTextureComponent(
+            new Rectangle(0, 0, 11 * Game1.pixelZoom, 12 * Game1.pixelZoom), Game1.mouseCursors,
+            new Rectangle(421, 459, 11, 12),
+            Game1.pixelZoom) { myID = SharedConstants.UpArrowId, downNeighborID = SharedConstants.DownArrowId });
+
+    private ModState(IModHelper helper)
     {
         this.helper = helper;
         this.configHelper = new ConfigHelper<ModConfig>(helper);
@@ -65,7 +68,17 @@ internal sealed class StateManager
         set => Instance!.offset.Value = value;
     }
 
-    public static void Init(IModHelper helper) => Instance ??= new StateManager(helper);
+    public static TextBox TextBox => Instance!.textBox.Value;
+
+    public static void Init(IModHelper helper) => Instance ??= new ModState(helper);
+
+    public static bool MatchesFilter(Item? item) =>
+        item is not null &&
+        (
+            item.DisplayName.Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+            item.getDescription().Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+            item.GetContextTags().Any(static tag => tag.Contains(TextBox.Text, StringComparison.OrdinalIgnoreCase))
+        );
 
     public static bool TryGetMenu(
         [NotNullWhen(true)] out ItemGrabMenu? menu,
@@ -96,13 +109,13 @@ internal sealed class StateManager
             return false;
         }
 
-        if (itemGrabMenu.currentlySnappedComponent is not { } slot)
+        if (itemGrabMenu.currentlySnappedComponent is not { } component)
         {
             return false;
         }
 
-        var index = inventoryMenu.inventory.IndexOf(slot);
-        if (index == -1 || index < inventoryMenu.capacity - Columns)
+        var bottom = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Bottom);
+        if (!bottom.Contains(component))
         {
             return false;
         }
@@ -118,13 +131,12 @@ internal sealed class StateManager
             return false;
         }
 
-        if (itemGrabMenu.currentlySnappedComponent is not { } slot)
+        if (itemGrabMenu.currentlySnappedComponent is not { } component)
         {
             return false;
         }
 
-        var index = inventoryMenu.inventory.IndexOf(slot);
-        if (index == -1 || index >= Columns)
+        if (!inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top).Contains(component))
         {
             return false;
         }

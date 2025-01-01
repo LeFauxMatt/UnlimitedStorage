@@ -6,7 +6,7 @@
 	<PropertyGroup>
 		<Name>Unlimited Storage</Name>
 		<Description>Makes storages hold unlimited items.</Description>
-		<Version>1.1.0-beta.1</Version>
+		<Version>1.1.0</Version>
 		<EnableHarmony>true</EnableHarmony>
 		<RootNamespace>LeFauxMods.UnlimitedStorage</RootNamespace>
 		<UniqueId>furyx639.UnlimitedStorage</UniqueId>

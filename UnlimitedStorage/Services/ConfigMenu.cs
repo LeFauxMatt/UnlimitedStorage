@@ -1,8 +1,10 @@
 using LeFauxMods.Common.Integrations.GenericModConfigMenu;
+using LeFauxMods.Common.Services;
 using StardewValley.TokenizableStrings;
 
 namespace LeFauxMods.UnlimitedStorage.Services;
 
+/// <summary>Responsible for handling the mod configuration menu.</summary>
 internal sealed class ConfigMenu
 {
     private readonly IGenericModConfigMenuApi api = null!;
@@ -22,35 +24,53 @@ internal sealed class ConfigMenu
         this.SetupMenu();
     }
 
+    private static ModConfig Config => ModState.ConfigHelper.Temp;
+
+    private static ConfigHelper<ModConfig> ConfigHelper => ModState.ConfigHelper;
+
     private void SetupMenu()
     {
-        this.gmcm.Register(StateManager.ConfigHelper.Reset, StateManager.ConfigHelper.Save);
+        this.gmcm.Register(ConfigHelper.Reset, ConfigHelper.Save);
+
+        this.api.AddKeybindList(
+            this.manifest,
+            static () => Config.ToggleSearch,
+            static value => Config.ToggleSearch = value,
+            I18n.ConfigOption_ToggleSearch_Name,
+            I18n.ConfigOption_ToggleSearch_Description);
 
         this.api.AddBoolOption(
             this.manifest,
-            () => StateManager.ConfigHelper.Temp.BigChestMenu,
-            value => StateManager.ConfigHelper.Temp.BigChestMenu = value,
+            static () => Config.BigChestMenu,
+            static value => Config.BigChestMenu = value,
             I18n.ConfigOption_BigChestsMenu_Name,
             I18n.ConfigOption_BigChestsMenu_Description);
 
         this.api.AddBoolOption(
             this.manifest,
-            () => StateManager.ConfigHelper.Temp.EnableScrolling,
-            value => StateManager.ConfigHelper.Temp.EnableScrolling = value,
+            static () => Config.EnableScrolling,
+            static value => Config.EnableScrolling = value,
             I18n.ConfigOption_EnableScrolling_Name,
             I18n.ConfigOption_EnableScrolling_Description);
 
         this.api.AddBoolOption(
             this.manifest,
-            () => StateManager.ConfigHelper.Temp.ShowArrows,
-            value => StateManager.ConfigHelper.Temp.ShowArrows = value,
+            static () => Config.EnableSearch,
+            static value => Config.EnableSearch = value,
+            I18n.ConfigOption_EnableSearch_Name,
+            I18n.ConfigOption_EnableSearch_Description);
+
+        this.api.AddBoolOption(
+            this.manifest,
+            static () => Config.ShowArrows,
+            static value => Config.ShowArrows = value,
             I18n.ConfigOption_ShowArrows_Name,
             I18n.ConfigOption_ShowArrows_Description);
 
         this.api.AddSectionTitle(this.manifest, I18n.ConfigOption_MakeUnlimited_Name);
         this.api.AddParagraph(this.manifest, I18n.ConfigOption_MakeUnlimited_Description);
 
-        foreach (var id in StateManager.ConfigHelper.Default.EnabledIds)
+        foreach (var id in ConfigHelper.Default.EnabledIds)
         {
             if (!Game1.bigCraftableData.TryGetValue(id, out var data))
             {
@@ -59,16 +79,16 @@ internal sealed class ConfigMenu
 
             this.api.AddBoolOption(
                 this.manifest,
-                () => StateManager.ConfigHelper.Temp.EnabledIds.Contains(id),
+                () => Config.EnabledIds.Contains(id),
                 value =>
                 {
                     if (value)
                     {
-                        StateManager.ConfigHelper.Temp.EnabledIds.Add(id);
+                        Config.EnabledIds.Add(id);
                     }
                     else
                     {
-                        StateManager.ConfigHelper.Temp.EnabledIds.Remove(id);
+                        Config.EnabledIds.Remove(id);
                     }
                 },
                 () => TokenParser.ParseText(data.DisplayName),

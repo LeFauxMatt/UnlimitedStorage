@@ -4,6 +4,7 @@ using HarmonyLib;
 using LeFauxMods.Common.Utilities;
 using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework.Graphics;
+using StardewValley.Inventories;
 using StardewValley.Menus;
 using StardewValley.Objects;
 
@@ -32,12 +33,25 @@ internal static class ModPatches
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
                     [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-                new HarmonyMethod(typeof(ModPatches), nameof(InventoryMenu_draw_prefix)));
+                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)));
 
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
                     [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-                postfix: new HarmonyMethod(typeof(ModPatches), nameof(InventoryMenu_draw_postfix)));
+                postfix: new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
+
+            _ = Harmony.Patch(
+                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
+                    [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
+                transpiler: new HarmonyMethod(typeof(ModPatches), nameof(InventoryMenu_draw_transpiler)));
+
+            _ = Harmony.Patch(
+                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.GetBorder)),
+                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)));
+
+            _ = Harmony.Patch(
+                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.GetBorder)),
+                postfix: new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
 
             _ = Harmony.Patch(
                 AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
@@ -63,7 +77,7 @@ internal static class ModPatches
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
     private static void Chest_SpecialChestType_postfix(Chest __instance, ref Chest.SpecialChestTypes __result)
     {
-        if (StateManager.Config.BigChestMenu &&
+        if (ModState.Config.BigChestMenu &&
             __result is Chest.SpecialChestTypes.None &&
             __instance.IsEnabled())
         {
@@ -81,35 +95,67 @@ internal static class ModPatches
             _ => capacity
         };
 
-    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    private static void InventoryMenu_draw_postfix(InventoryMenu __instance, ref bool __state)
+    private static IEnumerable<CodeInstruction>
+        InventoryMenu_draw_transpiler(IEnumerable<CodeInstruction> instructions) =>
+        new CodeMatcher(instructions)
+            .MatchEndForward(new CodeMatch(CodeInstruction.LoadField(typeof(InventoryMenu),
+                nameof(InventoryMenu.highlightMethod))))
+            .Repeat(static matcher =>
+                matcher
+                    .Advance(1)
+                    .InsertAndAdvance(
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        CodeInstruction.Call(typeof(ModPatches), nameof(HighlightMethod))))
+            .InstructionEnumeration();
+
+    private static InventoryMenu.highlightThisItem HighlightMethod(InventoryMenu.highlightThisItem highlightMethod,
+        InventoryMenu instance)
     {
-        if (__state && StateManager.TryGetMenu(out _, out var inventoryMenu, out var chest) &&
-            ReferenceEquals(__instance, inventoryMenu))
+        if (ModState.Columns == 0 ||
+            !ModState.Config.EnableSearch ||
+            string.IsNullOrWhiteSpace(ModState.TextBox.Text) ||
+            !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
+            !ReferenceEquals(instance, inventoryMenu) ||
+            !chest.IsEnabled())
         {
-            __instance.actualInventory = chest.GetItemsForPlayer();
+            return highlightMethod;
         }
+
+        return item =>
+            highlightMethod.Invoke(item) && (
+                item.DisplayName.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+                item.getDescription()
+                    .Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+                item.GetContextTags().Any(static tag =>
+                    tag.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase)));
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    private static void InventoryMenu_draw_prefix(InventoryMenu __instance, ref bool __state)
+    [SuppressMessage("ReSharper", "RedundantAssignment", Justification = "Harmony")]
+    private static void TryAdjustInventory(InventoryMenu __instance, ref IInventory? __state)
     {
-        if (StateManager.Columns == 0 || !StateManager.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
+        if (ModState.Columns == 0 || !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
             !ReferenceEquals(__instance, inventoryMenu))
         {
             return;
         }
 
         var maxOffset = __instance.GetMaxOffset(chest);
-        if (maxOffset <= 0)
+        __state = chest.GetItemsForPlayer();
+
+        var adjustedInventory = __state.AsEnumerable();
+        if (ModState.Config.EnableSearch && !string.IsNullOrWhiteSpace(ModState.TextBox.Text))
         {
-            return;
+            adjustedInventory = adjustedInventory.OrderBySearch();
         }
 
-        StateManager.Offset = Math.Min(Math.Max(0, StateManager.Offset), maxOffset * StateManager.Columns);
-        __state = true;
-        var actualInventory = chest.GetItemsForPlayer();
-        __instance.actualInventory = [.. actualInventory.Skip(StateManager.Offset).Take(__instance.capacity)];
+        if (maxOffset > 0)
+        {
+            ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
+            adjustedInventory = adjustedInventory.Skip(ModState.Offset).Take(__instance.capacity);
+        }
+
+        __instance.actualInventory = [..adjustedInventory];
 
         // Update name
         for (var i = 0; i < __instance.inventory.Count; i++)
@@ -120,7 +166,17 @@ internal static class ModPatches
                 continue;
             }
 
-            __instance.inventory[i].name = actualInventory.IndexOf(item).ToString(CultureInfo.InvariantCulture);
+            __instance.inventory[i].name = __state.IndexOf(item).ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+
+    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
+    private static void TryRevertInventory(InventoryMenu __instance, ref IInventory? __state)
+    {
+        if (__state is not null)
+        {
+            __instance.actualInventory = __state;
         }
     }
 
@@ -129,9 +185,9 @@ internal static class ModPatches
         new CodeMatcher(instructions)
             .MatchStartForward(
                 new CodeMatch(
-                    instruction => instruction.Calls(
+                    static instruction => instruction.Calls(
                         AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)))))
-            .Repeat(matcher =>
+            .Repeat(static matcher =>
                 matcher
                     .Advance(1)
                     .InsertAndAdvance(
