@@ -1,14 +1,14 @@
 {
-  "config-option.big-chests-menu.name": "Large Chest Menu",
-  "config-option.big-chests-menu.description": "Make the chest menu large by default.",
-  "config-option.enable-scrolling.name": "Enable Scroll Wheel",
-  "config-option.enable-scrolling.description": "Enable the scrolling up and down the chest menu.",
-  "config-option.enable-search.name": "Enable Search",
-  "config-option.enable-search.description": "Enable the search bar in the chest menu.",
-  "config-option.make-unlimited.name": "Make Unlimited",
-  "config-option.make-unlimited.description": "Make the chest type hold unlimited items.",
-  "config-option.show-arrows.name": "Show Arrow Buttons",
-  "config-option.show-arrows.description": "Show the arrow buttons on the chest menu.",
-  "config-option.toggle-search.name": "Toggle Search",
-  "config-option.toggle-search.description": "Keybind to toggle the search bar on or off."
+  "config-option.big-chests-menu.name": "大型物品栏菜单",
+  "config-option.big-chests-menu.description": "默认情况下使物品栏菜单变大.",
+  "config-option.enable-scrolling.name": "启用滚动",
+  "config-option.enable-scrolling.description": "启用在物品栏菜单中上下滚动.",
+  "config-option.enable-search.name": "启用搜索",
+  "config-option.enable-search.description": "在物品栏菜单中启用搜索栏.",
+  "config-option.make-unlimited.name": "无限制",
+  "config-option.make-unlimited.description": "使物品栏类型可以容纳无限数量的物品.",
+  "config-option.show-arrows.name": "显示箭头按钮",
+  "config-option.show-arrows.description": "在物品栏菜单上显示箭头按钮.",
+  "config-option.toggle-search.name": "切换搜索",
+  "config-option.toggle-search.description": "按键绑定以切换搜索栏的显示或隐藏."
 }
