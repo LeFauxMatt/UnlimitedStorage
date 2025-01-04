@@ -10,6 +10,7 @@ internal sealed class ConfigMenu
     private readonly IGenericModConfigMenuApi api = null!;
     private readonly GenericModConfigMenuIntegration gmcm;
     private readonly IManifest manifest;
+    private readonly IModHelper helper = null!;
 
     public ConfigMenu(IModHelper helper, IManifest manifest)
     {
@@ -21,6 +22,7 @@ internal sealed class ConfigMenu
         }
 
         this.api = this.gmcm.Api;
+        this.helper = helper;
         this.SetupMenu();
     }
 
@@ -70,7 +72,20 @@ internal sealed class ConfigMenu
         this.api.AddSectionTitle(this.manifest, I18n.ConfigOption_MakeUnlimited_Name);
         this.api.AddParagraph(this.manifest, I18n.ConfigOption_MakeUnlimited_Description);
 
-        foreach (var id in ConfigHelper.Default.EnabledIds)
+        
+        var EndabledIds = ConfigHelper.Default.EnabledIds;
+
+        // If the FilteredChestHopper mod is present, add hoppers as an option; otherwise remove them
+        if (this.helper.ModRegistry.IsLoaded(Constants.FilteredChestHopper))
+        {
+            EndabledIds.Add("275");
+        }
+        else
+        {
+            EndabledIds.Remove("275");
+        }
+
+        foreach (var id in EndabledIds)
         {
             if (!Game1.bigCraftableData.TryGetValue(id, out var data))
             {
