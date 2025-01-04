@@ -6,6 +6,8 @@ internal static class Constants
 
     public const string ChestsAnywhereId = "Pathoschild.ChestsAnywhere";
 
+    public const string FilteredChestHopper = "shivion.FilteredChestHopper";
+
     public const string ModEnabled = ModId + "/Enabled";
 
     public const string ModId = "furyx639.UnlimitedStorage";
