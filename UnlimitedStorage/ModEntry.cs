@@ -30,17 +30,6 @@ internal sealed class ModEntry : Mod
         helper.Events.Input.ButtonsChanged += this.OnButtonsChanged;
     }
 
-    private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
-    {
-        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
-        {
-            return;
-        }
-
-        ModState.Config.EnableSearch = !ModState.Config.EnableSearch;
-        this.Helper.Input.SuppressActiveKeybinds(ModState.Config.ToggleSearch);
-    }
-
     private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
         if (!e.NameWithoutLocale.IsEquivalentTo(Constants.BigCraftableData))
@@ -49,18 +38,18 @@ internal sealed class ModEntry : Mod
         }
 
         // Add config options to the data
-        e.Edit(static asset =>
+        e.Edit(static assetData =>
             {
-                var allData = asset.AsDictionary<string, BigCraftableData>().Data;
+                var data = assetData.AsDictionary<string, BigCraftableData>().Data;
                 foreach (var id in ModState.Config.EnabledIds)
                 {
-                    if (!allData.TryGetValue(id, out var data))
+                    if (!data.TryGetValue(id, out var bigCraftableData))
                     {
                         continue;
                     }
 
-                    data.CustomFields ??= [];
-                    data.CustomFields.Add(Constants.ModEnabled, "true");
+                    bigCraftableData.CustomFields ??= [];
+                    bigCraftableData.CustomFields[Constants.ModEnabled] = "true";
                 }
             },
             AssetEditPriority.Late);
@@ -68,8 +57,7 @@ internal sealed class ModEntry : Mod
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) ||
-            !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             ModState.Offset = 0;
             ModState.Columns = 0;
@@ -117,9 +105,20 @@ internal sealed class ModEntry : Mod
         }
     }
 
+    private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
+    {
+        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
+        {
+            return;
+        }
+
+        ModState.Config.EnableSearch = !ModState.Config.EnableSearch;
+        this.Helper.Input.SuppressActiveKeybinds(ModState.Config.ToggleSearch);
+    }
+
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             return;
         }
@@ -180,7 +179,7 @@ internal sealed class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             return;
         }
@@ -303,7 +302,7 @@ internal sealed class ModEntry : Mod
 
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
     {
-        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest))
         {
             return;
         }
