@@ -5,6 +5,7 @@ using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI.Events;
 using StardewValley.GameData.BigCraftables;
+using StardewValley.Locations;
 using StardewValley.Menus;
 
 namespace LeFauxMods.UnlimitedStorage;
@@ -26,8 +27,10 @@ internal sealed class ModEntry : Mod
         helper.Events.Content.AssetRequested += OnAssetRequested;
         helper.Events.Display.MenuChanged += OnMenuChanged;
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
+        helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
         helper.Events.Input.ButtonsChanged += this.OnButtonsChanged;
+        helper.Events.Player.Warped += OnWarped;
     }
 
     private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
@@ -39,20 +42,19 @@ internal sealed class ModEntry : Mod
 
         // Add config options to the data
         e.Edit(static assetData =>
+        {
+            var data = assetData.AsDictionary<string, BigCraftableData>().Data;
+            foreach (var id in ModState.Config.EnabledIds)
             {
-                var data = assetData.AsDictionary<string, BigCraftableData>().Data;
-                foreach (var id in ModState.Config.EnabledIds)
+                if (!data.TryGetValue(id, out var bigCraftableData))
                 {
-                    if (!data.TryGetValue(id, out var bigCraftableData))
-                    {
-                        continue;
-                    }
-
-                    bigCraftableData.CustomFields ??= [];
-                    bigCraftableData.CustomFields[Constants.ModEnabled] = "true";
+                    continue;
                 }
-            },
-            AssetEditPriority.Late);
+
+                bigCraftableData.CustomFields ??= [];
+                bigCraftableData.CustomFields[Constants.ModEnabled] = "true";
+            }
+        });
     }
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
@@ -102,6 +104,32 @@ internal sealed class ModEntry : Mod
             var top = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top);
             ModState.TextBox.Width = top[^1].bounds.Right - top[0].bounds.Left;
             ModState.TextBox.X = top[0].bounds.Left;
+        }
+    }
+
+    private static void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
+    {
+        switch (Game1.player.currentLocation)
+        {
+            case FarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+            case IslandFarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+        }
+    }
+
+    private static void OnWarped(object? sender, WarpedEventArgs e)
+    {
+        switch (e.NewLocation)
+        {
+            case FarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+            case IslandFarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
         }
     }
 

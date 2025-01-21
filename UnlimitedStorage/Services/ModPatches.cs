@@ -152,9 +152,9 @@ internal static class ModPatches
             adjustedInventory = adjustedInventory.OrderBySearch();
         }
 
+        ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
         if (maxOffset > 0)
         {
-            ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
             adjustedInventory = adjustedInventory.Skip(ModState.Offset).Take(__instance.capacity);
         }
 
