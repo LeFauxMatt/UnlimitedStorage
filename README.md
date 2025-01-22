@@ -60,7 +60,7 @@ Add `furyx639.UnlimitedStorage/Enabled` to custom fields:
 
 |            |         Unlimited Storage          |
 | :--------- | :--------------------------------: |
-| Chinese    | [❌️](UnlimitedStorage/i18n/zh.json) |
+| Chinese    | [✔️](UnlimitedStorage/i18n/zh.json) |
 | French     | [❌️](UnlimitedStorage/i18n/fr.json) |
 | German     | [❌️](UnlimitedStorage/i18n/de.json) |
 | Hungarian  | [❌️](UnlimitedStorage/i18n/hu.json) |

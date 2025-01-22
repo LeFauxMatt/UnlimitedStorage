@@ -56,6 +56,8 @@ internal sealed class ModState
 
     public static ClickableTextureComponent UpArrow => Instance!.upArrow.Value;
 
+    public static TextBox TextBox => Instance!.textBox.Value;
+
     public static int Columns
     {
         get => Instance!.columns.Value;
@@ -68,8 +70,6 @@ internal sealed class ModState
         set => Instance!.offset.Value = value;
     }
 
-    public static TextBox TextBox => Instance!.textBox.Value;
-
     public static void Init(IModHelper helper) => Instance ??= new ModState(helper);
 
     public static bool TryGetMenu(
@@ -77,19 +77,27 @@ internal sealed class ModState
         [NotNullWhen(true)] out InventoryMenu? inventoryMenu,
         [NotNullWhen(true)] out Chest? chest)
     {
-        if (Game1.activeClickableMenu is ItemGrabMenu
-            {
-                ItemsToGrabMenu: { } itemsToGrabMenu, sourceItem: Chest sourceItem
-            } itemGrabMenu)
+        if (Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } itemsToGrabMenu } itemGrabMenu)
         {
-            menu = itemGrabMenu;
-            inventoryMenu = itemsToGrabMenu;
-            chest = sourceItem;
-            return true;
+            menu = null;
+            inventoryMenu = null;
+            chest = null;
+            return false;
         }
 
-        menu = null;
-        inventoryMenu = null;
+        menu = itemGrabMenu;
+        inventoryMenu = itemsToGrabMenu;
+        switch (itemGrabMenu.sourceItem ?? itemGrabMenu.context)
+        {
+            case SObject { heldObject.Value: Chest heldObject } sourceObject
+                when Config.EnabledIds.Contains(sourceObject.ItemId):
+                chest = heldObject;
+                return true;
+            case Chest sourceItem when Config.EnabledIds.Contains(sourceItem.ItemId):
+                chest = sourceItem;
+                return true;
+        }
+
         chest = null;
         return false;
     }

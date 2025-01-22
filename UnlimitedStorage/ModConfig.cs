@@ -16,10 +16,12 @@ internal sealed class ModConfig : IModConfig<ModConfig>, IConfigWithLogAmount
     public HashSet<string> EnabledIds { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         "130", // Chest
+        "165", // Auto-Grabber
         "216", // Mini-Fridge
         "232", // Stone Chest
         "248", // Mini-Shipping Bin
         "256", // Junimo Chest
+        "275", // Hopper
         "BigChest",
         "BigStoneChest"
     };

@@ -68,18 +68,21 @@ internal static class ModPatches
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
     private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result)
     {
-        if (__instance.IsEnabled())
+        if (Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
+            data.CustomFields?.GetBool(Constants.ModEnabled) == true)
         {
-            __result = Math.Max(__result, __instance.GetItemsForPlayer().Count + 1);
+            __result = Math.Max(
+                ModState.Config.BigChestMenu ? 70 : __result,
+                Math.Max(__result, __instance.GetItemsForPlayer().Count + 1));
         }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    private static void Chest_SpecialChestType_postfix(Chest __instance, ref Chest.SpecialChestTypes __result)
+    [SuppressMessage("ReSharper", "SuggestBaseTypeForParameter", Justification = "Harmony")]
+    private static void Chest_SpecialChestType_postfix(ref Chest.SpecialChestTypes __result)
     {
         if (ModState.Config.BigChestMenu &&
-            __result is Chest.SpecialChestTypes.None &&
-            __instance.IsEnabled())
+            __result is Chest.SpecialChestTypes.None or Chest.SpecialChestTypes.JunimoChest)
         {
             __result = Chest.SpecialChestTypes.BigChest;
         }
@@ -91,7 +94,7 @@ internal static class ModPatches
             Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest => 9,
             Chest.SpecialChestTypes.Enricher => 1,
             Chest.SpecialChestTypes.BigChest => 70,
-            not null => 36,
+            not null => ModState.Config.BigChestMenu ? 70 : 36,
             _ => capacity
         };
 
@@ -114,9 +117,8 @@ internal static class ModPatches
         if (ModState.Columns == 0 ||
             !ModState.Config.EnableSearch ||
             string.IsNullOrWhiteSpace(ModState.TextBox.Text) ||
-            !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
-            !ReferenceEquals(instance, inventoryMenu) ||
-            !chest.IsEnabled())
+            !ModState.TryGetMenu(out _, out var inventoryMenu, out _) ||
+            !ReferenceEquals(instance, inventoryMenu))
         {
             return highlightMethod;
         }
@@ -134,7 +136,8 @@ internal static class ModPatches
     [SuppressMessage("ReSharper", "RedundantAssignment", Justification = "Harmony")]
     private static void TryAdjustInventory(InventoryMenu __instance, ref IInventory? __state)
     {
-        if (ModState.Columns == 0 || !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
+        if (ModState.Columns == 0 ||
+            !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
             !ReferenceEquals(__instance, inventoryMenu))
         {
             return;
@@ -149,9 +152,9 @@ internal static class ModPatches
             adjustedInventory = adjustedInventory.OrderBySearch();
         }
 
+        ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
         if (maxOffset > 0)
         {
-            ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
             adjustedInventory = adjustedInventory.Skip(ModState.Offset).Take(__instance.capacity);
         }
 

@@ -5,6 +5,7 @@ using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI.Events;
 using StardewValley.GameData.BigCraftables;
+using StardewValley.Locations;
 using StardewValley.Menus;
 
 namespace LeFauxMods.UnlimitedStorage;
@@ -26,19 +27,10 @@ internal sealed class ModEntry : Mod
         helper.Events.Content.AssetRequested += OnAssetRequested;
         helper.Events.Display.MenuChanged += OnMenuChanged;
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
+        helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
         helper.Events.Input.ButtonsChanged += this.OnButtonsChanged;
-    }
-
-    private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
-    {
-        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
-        {
-            return;
-        }
-
-        ModState.Config.EnableSearch = !ModState.Config.EnableSearch;
-        this.Helper.Input.SuppressActiveKeybinds(ModState.Config.ToggleSearch);
+        helper.Events.Player.Warped += OnWarped;
     }
 
     private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
@@ -49,27 +41,25 @@ internal sealed class ModEntry : Mod
         }
 
         // Add config options to the data
-        e.Edit(static asset =>
+        e.Edit(static assetData =>
+        {
+            var data = assetData.AsDictionary<string, BigCraftableData>().Data;
+            foreach (var id in ModState.Config.EnabledIds)
             {
-                var allData = asset.AsDictionary<string, BigCraftableData>().Data;
-                foreach (var id in ModState.Config.EnabledIds)
+                if (!data.TryGetValue(id, out var bigCraftableData))
                 {
-                    if (!allData.TryGetValue(id, out var data))
-                    {
-                        continue;
-                    }
-
-                    data.CustomFields ??= [];
-                    data.CustomFields.Add(Constants.ModEnabled, "true");
+                    continue;
                 }
-            },
-            AssetEditPriority.Late);
+
+                bigCraftableData.CustomFields ??= [];
+                bigCraftableData.CustomFields[Constants.ModEnabled] = "true";
+            }
+        });
     }
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) ||
-            !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             ModState.Offset = 0;
             ModState.Columns = 0;
@@ -117,9 +107,46 @@ internal sealed class ModEntry : Mod
         }
     }
 
+    private static void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
+    {
+        switch (Game1.player.currentLocation)
+        {
+            case FarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+            case IslandFarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+        }
+    }
+
+    private static void OnWarped(object? sender, WarpedEventArgs e)
+    {
+        switch (e.NewLocation)
+        {
+            case FarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+            case IslandFarmHouse { fridge.Value: { } fridge }:
+                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                break;
+        }
+    }
+
+    private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
+    {
+        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
+        {
+            return;
+        }
+
+        ModState.Config.EnableSearch = !ModState.Config.EnableSearch;
+        this.Helper.Input.SuppressActiveKeybinds(ModState.Config.ToggleSearch);
+    }
+
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             return;
         }
@@ -180,7 +207,7 @@ internal sealed class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
         {
             return;
         }
@@ -303,7 +330,7 @@ internal sealed class ModEntry : Mod
 
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
     {
-        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) || !chest.IsEnabled())
+        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest))
         {
             return;
         }

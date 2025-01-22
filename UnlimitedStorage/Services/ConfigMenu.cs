@@ -1,6 +1,5 @@
 using LeFauxMods.Common.Integrations.GenericModConfigMenu;
 using LeFauxMods.Common.Services;
-using StardewValley.TokenizableStrings;
 
 namespace LeFauxMods.UnlimitedStorage.Services;
 
@@ -9,10 +8,12 @@ internal sealed class ConfigMenu
 {
     private readonly IGenericModConfigMenuApi api = null!;
     private readonly GenericModConfigMenuIntegration gmcm;
+    private readonly IModHelper helper;
     private readonly IManifest manifest;
 
     public ConfigMenu(IModHelper helper, IManifest manifest)
     {
+        this.helper = helper;
         this.manifest = manifest;
         this.gmcm = new GenericModConfigMenuIntegration(manifest, helper.ModRegistry);
         if (!this.gmcm.IsLoaded)
@@ -67,32 +68,6 @@ internal sealed class ConfigMenu
             I18n.ConfigOption_ShowArrows_Name,
             I18n.ConfigOption_ShowArrows_Description);
 
-        this.api.AddSectionTitle(this.manifest, I18n.ConfigOption_MakeUnlimited_Name);
-        this.api.AddParagraph(this.manifest, I18n.ConfigOption_MakeUnlimited_Description);
-
-        foreach (var id in ConfigHelper.Default.EnabledIds)
-        {
-            if (!Game1.bigCraftableData.TryGetValue(id, out var data))
-            {
-                continue;
-            }
-
-            this.api.AddBoolOption(
-                this.manifest,
-                () => Config.EnabledIds.Contains(id),
-                value =>
-                {
-                    if (value)
-                    {
-                        Config.EnabledIds.Add(id);
-                    }
-                    else
-                    {
-                        Config.EnabledIds.Remove(id);
-                    }
-                },
-                () => TokenParser.ParseText(data.DisplayName),
-                () => TokenParser.ParseText(data.Description));
-        }
+        this.gmcm.AddComplexOption(new UnlimitedOption(this.helper));
     }
 }
