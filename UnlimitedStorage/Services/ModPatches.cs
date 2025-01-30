@@ -4,6 +4,7 @@ using HarmonyLib;
 using LeFauxMods.Common.Utilities;
 using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework.Graphics;
+using StardewModdingAPI.Utilities;
 using StardewValley.Inventories;
 using StardewValley.Menus;
 using StardewValley.Objects;
@@ -16,6 +17,8 @@ internal static class ModPatches
     private static readonly string EmptySlot = int.MaxValue.ToString(CultureInfo.InvariantCulture);
     private static readonly Harmony Harmony = new(Constants.ModId);
 
+    private static readonly PerScreen<InventoryMenu.highlightThisItem?> HighlightMethod = new();
+
     public static void Apply()
     {
         Log.Info("Applying Patches");
@@ -27,74 +30,51 @@ internal static class ModPatches
                 postfix: new HarmonyMethod(typeof(ModPatches), nameof(Chest_GetActualCapacity_postfix)));
 
             _ = Harmony.Patch(
-                AccessTools.DeclaredPropertyGetter(typeof(Chest), nameof(Chest.SpecialChestType)),
-                postfix: new HarmonyMethod(typeof(ModPatches), nameof(Chest_SpecialChestType_postfix)));
-
-            _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
                     [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)));
-
-            _ = Harmony.Patch(
-                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
-                    [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-                postfix: new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
-
-            _ = Harmony.Patch(
-                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
-                    [typeof(SpriteBatch), typeof(int), typeof(int), typeof(int)]),
-                transpiler: new HarmonyMethod(typeof(ModPatches), nameof(InventoryMenu_draw_transpiler)));
+                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)),
+                new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)),
+                new HarmonyMethod(typeof(ModPatches), nameof(InventoryMenu_draw_transpiler)));
 
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.GetBorder)),
-                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)));
-
-            _ = Harmony.Patch(
-                AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.GetBorder)),
-                postfix: new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
-
-            _ = Harmony.Patch(
-                AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
-                    .Single(static info => info.GetParameters().Length > 5),
-                transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
+                new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)),
+                new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
         }
         catch
         {
             Log.Warn("Failed to apply patches");
         }
+
+        _ = Harmony.Patch(
+            AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
+                .Single(static info => info.GetParameters().Length > 5),
+            new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_prefix)),
+            transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
     }
 
 
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
+    [SuppressMessage("ReSharper", "SuggestBaseTypeForParameter", Justification = "Harmony")]
     private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result)
     {
         if (Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
             data.CustomFields?.GetBool(Constants.ModEnabled) == true)
         {
-            __result = Math.Max(
-                ModState.Config.BigChestMenu ? 70 : __result,
-                Math.Max(__result, __instance.GetItemsForPlayer().Count + 1));
+            __result = int.MaxValue;
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    [SuppressMessage("ReSharper", "SuggestBaseTypeForParameter", Justification = "Harmony")]
-    private static void Chest_SpecialChestType_postfix(ref Chest.SpecialChestTypes __result)
-    {
-        if (ModState.Config.BigChestMenu &&
-            __result is Chest.SpecialChestTypes.None or Chest.SpecialChestTypes.JunimoChest)
+    private static int GetActualCapacity(int capacity, Item? sourceItem) =>
+        sourceItem switch
         {
-            __result = Chest.SpecialChestTypes.BigChest;
-        }
-    }
-
-    private static int GetActualCapacity(int capacity, object? context) =>
-        (context as Chest)?.SpecialChestType switch
-        {
-            Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest => 9,
-            Chest.SpecialChestTypes.Enricher => 1,
-            Chest.SpecialChestTypes.BigChest => 70,
-            not null => ModState.Config.BigChestMenu ? 70 : 36,
+            not null when ModState.Config.BigChestMenu => 70,
+            Chest
+            {
+                SpecialChestType: Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest
+            } => 9,
+            Chest { SpecialChestType: Chest.SpecialChestTypes.Enricher } => 1,
+            Chest { SpecialChestType: Chest.SpecialChestTypes.BigChest } => 70,
             _ => capacity
         };
 
@@ -108,10 +88,10 @@ internal static class ModPatches
                     .Advance(1)
                     .InsertAndAdvance(
                         new CodeInstruction(OpCodes.Ldarg_0),
-                        CodeInstruction.Call(typeof(ModPatches), nameof(HighlightMethod))))
+                        CodeInstruction.Call(typeof(ModPatches), nameof(GetHighlightMethod))))
             .InstructionEnumeration();
 
-    private static InventoryMenu.highlightThisItem HighlightMethod(InventoryMenu.highlightThisItem highlightMethod,
+    private static InventoryMenu.highlightThisItem GetHighlightMethod(InventoryMenu.highlightThisItem highlightMethod,
         InventoryMenu instance)
     {
         if (ModState.Columns == 0 ||
@@ -123,14 +103,17 @@ internal static class ModPatches
             return highlightMethod;
         }
 
-        return item =>
-            highlightMethod.Invoke(item) && (
-                item.DisplayName.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
-                item.getDescription()
-                    .Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
-                item.GetContextTags().Any(static tag =>
-                    tag.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase)));
+        HighlightMethod.Value = highlightMethod;
+        return HighlightItem;
     }
+
+    private static bool HighlightItem(Item item) =>
+        HighlightMethod.Value?.Invoke(item) != false && (
+            item.DisplayName.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+            item.getDescription()
+                .Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase) ||
+            item.GetContextTags().Any(static tag =>
+                tag.Contains(ModState.TextBox.Text, StringComparison.OrdinalIgnoreCase)));
 
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
     [SuppressMessage("ReSharper", "RedundantAssignment", Justification = "Harmony")]
@@ -183,9 +166,23 @@ internal static class ModPatches
         }
     }
 
+    private static void ItemGrabMenu_constructor_prefix(ref Item? sourceItem, object context)
+    {
+        if (context is SObject { QualifiedItemId: "(BC)165" } item)
+        {
+            sourceItem = item;
+        }
+    }
+
     private static IEnumerable<CodeInstruction>
         ItemGrabMenu_constructor_transpiler(IEnumerable<CodeInstruction> instructions) =>
         new CodeMatcher(instructions)
+            .MatchEndForward(
+                new CodeMatch(OpCodes.Isinst, typeof(Chest)),
+                new CodeMatch(OpCodes.Stloc_1))
+            .InsertAndAdvance(
+                new CodeInstruction(OpCodes.Ldarg_S, (short)14),
+                CodeInstruction.Call(typeof(ModPatches), nameof(GetAutoGrabberChest)))
             .MatchStartForward(
                 new CodeMatch(
                     static instruction => instruction.Calls(
@@ -194,8 +191,13 @@ internal static class ModPatches
                 matcher
                     .Advance(1)
                     .InsertAndAdvance(
-                        new CodeInstruction(OpCodes.Ldarg_S, (short)16),
+                        new CodeInstruction(OpCodes.Ldarg_S, (short)14),
                         CodeInstruction.Call(typeof(ModPatches), nameof(GetActualCapacity)))
             )
             .InstructionEnumeration();
+
+    private static Chest? GetAutoGrabberChest(Chest? result, Item? sourceItem) =>
+        result ?? (sourceItem is SObject { QualifiedItemId: "(BC)165", heldObject.Value: Chest heldChest }
+            ? heldChest
+            : null);
 }
