@@ -40,17 +40,17 @@ internal static class ModPatches
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.GetBorder)),
                 new HarmonyMethod(typeof(ModPatches), nameof(TryAdjustInventory)),
                 new HarmonyMethod(typeof(ModPatches), nameof(TryRevertInventory)));
+
+            _ = Harmony.Patch(
+                AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
+                    .Single(static info => info.GetParameters().Length > 5),
+                new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_prefix)),
+                transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
         }
         catch
         {
             Log.Warn("Failed to apply patches");
         }
-
-        _ = Harmony.Patch(
-            AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
-                .Single(static info => info.GetParameters().Length > 5),
-            new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_prefix)),
-            transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
     }
 
 
@@ -61,7 +61,7 @@ internal static class ModPatches
         if (Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
             data.CustomFields?.GetBool(Constants.ModEnabled) == true)
         {
-            __result = int.MaxValue;
+            __result = Math.Max(__result, __instance.GetItemsForPlayer().Count);
         }
     }
 
@@ -75,7 +75,8 @@ internal static class ModPatches
             } => 9,
             Chest { SpecialChestType: Chest.SpecialChestTypes.Enricher } => 1,
             Chest { SpecialChestType: Chest.SpecialChestTypes.BigChest } => 70,
-            _ => capacity
+            not null => 36,
+            null => capacity
         };
 
     private static IEnumerable<CodeInstruction>
@@ -120,14 +121,14 @@ internal static class ModPatches
     private static void TryAdjustInventory(InventoryMenu __instance, ref IInventory? __state)
     {
         if (ModState.Columns == 0 ||
-            !ModState.TryGetMenu(out _, out var inventoryMenu, out var chest) ||
+            !ModState.TryGetMenu(out _, out var inventoryMenu, out var inventory) ||
             !ReferenceEquals(__instance, inventoryMenu))
         {
             return;
         }
 
-        var maxOffset = __instance.GetMaxOffset(chest);
-        __state = chest.GetItemsForPlayer();
+        var maxOffset = __instance.GetMaxOffset(inventory);
+        __state = inventory;
 
         var adjustedInventory = __state.AsEnumerable();
         if (ModState.Config.EnableSearch && !string.IsNullOrWhiteSpace(ModState.TextBox.Text))
@@ -168,9 +169,11 @@ internal static class ModPatches
 
     private static void ItemGrabMenu_constructor_prefix(ref Item? sourceItem, object context)
     {
-        if (context is SObject { QualifiedItemId: "(BC)165" } item)
+        switch (context)
         {
-            sourceItem = item;
+            case SObject { QualifiedItemId: "(BC)165" } item:
+                sourceItem = item;
+                return;
         }
     }
 
@@ -182,7 +185,7 @@ internal static class ModPatches
                 new CodeMatch(OpCodes.Stloc_1))
             .InsertAndAdvance(
                 new CodeInstruction(OpCodes.Ldarg_S, (short)14),
-                CodeInstruction.Call(typeof(ModPatches), nameof(GetAutoGrabberChest)))
+                CodeInstruction.Call(typeof(ModPatches), nameof(GetAlternateChest)))
             .MatchStartForward(
                 new CodeMatch(
                     static instruction => instruction.Calls(
@@ -196,8 +199,10 @@ internal static class ModPatches
             )
             .InstructionEnumeration();
 
-    private static Chest? GetAutoGrabberChest(Chest? result, Item? sourceItem) =>
-        result ?? (sourceItem is SObject { QualifiedItemId: "(BC)165", heldObject.Value: Chest heldChest }
-            ? heldChest
-            : null);
+    private static Chest? GetAlternateChest(Chest? result, Item? sourceItem) =>
+        result ?? sourceItem switch
+        {
+            SObject { QualifiedItemId: "(BC)165", heldObject.Value: Chest heldChest } => heldChest,
+            _ => null
+        };
 }

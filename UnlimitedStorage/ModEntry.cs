@@ -59,7 +59,7 @@ internal sealed class ModEntry : Mod
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var inventory))
         {
             ModState.Offset = 0;
             ModState.Columns = 0;
@@ -146,7 +146,7 @@ internal sealed class ModEntry : Mod
 
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
+        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var inventory))
         {
             return;
         }
@@ -154,7 +154,7 @@ internal sealed class ModEntry : Mod
         var cursor = ModState.Cursor;
         if (ModState.Config.ShowArrows)
         {
-            var maxOffset = inventoryMenu.GetMaxOffset(chest);
+            var maxOffset = inventoryMenu.GetMaxOffset(inventory);
             ModState.UpArrow.tryHover(cursor.X, cursor.Y);
             ModState.UpArrow.draw(
                 e.SpriteBatch,
@@ -330,7 +330,7 @@ internal sealed class ModEntry : Mod
 
     private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
     {
-        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var chest))
+        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var inventory))
         {
             return;
         }
