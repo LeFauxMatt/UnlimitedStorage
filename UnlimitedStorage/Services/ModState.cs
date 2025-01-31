@@ -5,6 +5,7 @@ using LeFauxMods.UnlimitedStorage.Models;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Utilities;
+using StardewValley.Inventories;
 using StardewValley.Menus;
 using StardewValley.Objects;
 
@@ -84,19 +85,19 @@ internal sealed class ModState
     public static bool TryGetMenu(
         [NotNullWhen(true)] out ItemGrabMenu? menu,
         [NotNullWhen(true)] out InventoryMenu? inventoryMenu,
-        [NotNullWhen(true)] out Chest? chest)
+        [NotNullWhen(true)] out IInventory? inventory)
     {
         if (Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } itemsToGrabMenu } itemGrabMenu)
         {
             menu = null;
             inventoryMenu = null;
-            chest = null;
+            inventory = null;
             return false;
         }
 
         menu = itemGrabMenu;
         inventoryMenu = itemsToGrabMenu;
-        switch (itemGrabMenu.sourceItem ?? itemGrabMenu.context)
+        switch (itemGrabMenu.sourceItem)
         {
             case SObject { heldObject.Value: Chest heldChest } sourceObject
                 when IsEnabled(sourceObject.ItemId):
@@ -115,7 +116,7 @@ internal sealed class ModState
                 return true;
         }
 
-        chest = null;
+        inventory = null;
         return false;
     }
 
