@@ -35,26 +35,31 @@ internal sealed class ModEntry : Mod
 
     private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
-        if (!e.NameWithoutLocale.IsEquivalentTo(Constants.BigCraftableData))
+        if (!ModState.Config.StorageOptions.Any() || !e.NameWithoutLocale.IsEquivalentTo(ModConstants.BigCraftableData))
         {
             return;
         }
 
         // Add config options to the data
         e.Edit(static assetData =>
-        {
-            var data = assetData.AsDictionary<string, BigCraftableData>().Data;
-            foreach (var id in ModState.Config.EnabledIds)
             {
-                if (!data.TryGetValue(id, out var bigCraftableData))
+                var data = assetData.AsDictionary<string, BigCraftableData>().Data;
+                foreach (var (itemId, storageOptions) in ModState.Config.StorageOptions)
                 {
-                    continue;
-                }
+                    if (!data.TryGetValue(itemId, out var bigCraftableData) || !storageOptions.Enabled ||
+                        storageOptions.GetData() is not { } dict)
+                    {
+                        continue;
+                    }
 
-                bigCraftableData.CustomFields ??= [];
-                bigCraftableData.CustomFields[Constants.ModEnabled] = "true";
-            }
-        });
+                    bigCraftableData.CustomFields ??= [];
+                    foreach (var (key, value) in dict)
+                    {
+                        bigCraftableData.CustomFields[key] = value;
+                    }
+                }
+            },
+            AssetEditPriority.Late);
     }
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
@@ -112,10 +117,10 @@ internal sealed class ModEntry : Mod
         switch (Game1.player.currentLocation)
         {
             case FarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
                 break;
             case IslandFarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
                 break;
         }
     }
@@ -125,10 +130,10 @@ internal sealed class ModEntry : Mod
         switch (e.NewLocation)
         {
             case FarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
                 break;
             case IslandFarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.Config.EnabledIds.Contains("216") ? "216" : "130";
+                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
                 break;
         }
     }
@@ -173,7 +178,7 @@ internal sealed class ModEntry : Mod
             ModState.TextBox.Y = inventoryMenu.yPositionOnScreen - ModState.TextBox.Height - (13 * Game1.pixelZoom);
 
             // Adjust for Chests Anywhere
-            if (this.Helper.ModRegistry.IsLoaded(Constants.ChestsAnywhereId))
+            if (this.Helper.ModRegistry.IsLoaded(ModConstants.ChestsAnywhereId))
             {
                 ModState.TextBox.Y -= 52;
 
@@ -310,7 +315,7 @@ internal sealed class ModEntry : Mod
 
     private void OnConfigChanged(ConfigChangedEventArgs<ModConfig> e)
     {
-        _ = this.Helper.GameContent.InvalidateCache(Constants.BigCraftableData);
+        _ = this.Helper.GameContent.InvalidateCache(ModConstants.BigCraftableData);
         this.Helper.Events.Display.RenderedActiveMenu -= this.OnRenderedActiveMenu;
         this.Helper.Events.Input.MouseWheelScrolled -= this.OnMouseWheelScrolled;
 

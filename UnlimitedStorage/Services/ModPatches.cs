@@ -14,7 +14,7 @@ namespace LeFauxMods.UnlimitedStorage.Services;
 internal static class ModPatches
 {
     private static readonly string EmptySlot = int.MaxValue.ToString(CultureInfo.InvariantCulture);
-    private static readonly Harmony Harmony = new(Constants.ModId);
+    private static readonly Harmony Harmony = new(ModConstants.ModId);
 
     public static void Apply()
     {
@@ -68,35 +68,31 @@ internal static class ModPatches
     [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
     private static void Chest_GetActualCapacity_postfix(Chest __instance, ref int __result)
     {
-        if (Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
-            data.CustomFields?.GetBool(Constants.ModEnabled) == true)
+        if (ModState.Data.TryGetValue(__instance.ItemId, out var storageOptions) && storageOptions.Enabled)
         {
-            __result = Math.Max(
-                ModState.Config.BigChestMenu ? 70 : __result,
-                Math.Max(__result, __instance.GetItemsForPlayer().Count + 1));
+            __result = Math.Max(__result, storageOptions.Capacity);
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    [SuppressMessage("ReSharper", "SuggestBaseTypeForParameter", Justification = "Harmony")]
-    private static void Chest_SpecialChestType_postfix(ref Chest.SpecialChestTypes __result)
+    private static int GetMenuCapacity(int capacity, Item? sourceItem)
     {
-        if (ModState.Config.BigChestMenu &&
-            __result is Chest.SpecialChestTypes.None or Chest.SpecialChestTypes.JunimoChest)
+        if (sourceItem is not null && ModState.Data.TryGetValue(sourceItem.ItemId, out var storageOptions))
         {
-            __result = Chest.SpecialChestTypes.BigChest;
+            return storageOptions.MenuWidth * storageOptions.MenuHeight;
         }
-    }
 
-    private static int GetActualCapacity(int capacity, object? context) =>
-        (context as Chest)?.SpecialChestType switch
+        return sourceItem switch
         {
-            Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest => 9,
-            Chest.SpecialChestTypes.Enricher => 1,
-            Chest.SpecialChestTypes.BigChest => 70,
-            not null => ModState.Config.BigChestMenu ? 70 : 36,
-            _ => capacity
+            Chest
+            {
+                SpecialChestType: Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest
+            } => 9,
+            Chest { SpecialChestType: Chest.SpecialChestTypes.Enricher } => 1,
+            Chest { SpecialChestType: Chest.SpecialChestTypes.BigChest } => 70,
+            not null => 36,
+            null => capacity
         };
+    }
 
     private static IEnumerable<CodeInstruction>
         InventoryMenu_draw_transpiler(IEnumerable<CodeInstruction> instructions) =>
@@ -194,8 +190,8 @@ internal static class ModPatches
                 matcher
                     .Advance(1)
                     .InsertAndAdvance(
-                        new CodeInstruction(OpCodes.Ldarg_S, (short)16),
-                        CodeInstruction.Call(typeof(ModPatches), nameof(GetActualCapacity)))
+                        new CodeInstruction(OpCodes.Ldarg_S, (short)14),
+                        CodeInstruction.Call(typeof(ModPatches), nameof(GetMenuCapacity)))
             )
             .InstructionEnumeration();
 }
