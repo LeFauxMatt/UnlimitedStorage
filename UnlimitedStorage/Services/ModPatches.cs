@@ -45,7 +45,8 @@ internal static class ModPatches
                 AccessTools.GetDeclaredConstructors(typeof(ItemGrabMenu))
                     .Single(static info => info.GetParameters().Length > 5),
                 new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_prefix)),
-                transpiler: new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
+                new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_postfix)),
+                new HarmonyMethod(typeof(ModPatches), nameof(ItemGrabMenu_constructor_transpiler)));
         }
         catch
         {
@@ -82,6 +83,16 @@ internal static class ModPatches
             not null => 36,
             null => capacity
         };
+    }
+
+    private static int GetMenuRows(int rows, Item? sourceItem)
+    {
+        if (sourceItem is not null && ModState.Data.TryGetValue(sourceItem.ItemId, out var storageOptions))
+        {
+            return storageOptions.MenuHeight;
+        }
+
+        return rows;
     }
 
     private static IEnumerable<CodeInstruction>
@@ -172,6 +183,39 @@ internal static class ModPatches
         }
     }
 
+    private static void ItemGrabMenu_constructor_postfix(ItemGrabMenu __instance)
+    {
+        var offsetX =
+            __instance.ItemsToGrabMenu.xPositionOnScreen -
+            __instance.inventory.xPositionOnScreen -
+            __instance.inventory.width +
+            (__instance.ItemsToGrabMenu.width / 2) +
+            4;
+
+        var offsetY =
+            __instance.ItemsToGrabMenu.yPositionOnScreen -
+            __instance.inventory.yPositionOnScreen +
+            __instance.ItemsToGrabMenu.height -
+            __instance.storageSpaceTopBorderOffset +
+            (IClickableMenu.borderWidth * 2) +
+            IClickableMenu.spaceToClearTopBorder -
+            Game1.tileSize - 53;
+
+        // Move top
+        __instance.ItemsToGrabMenu.SetPosition(
+            __instance.ItemsToGrabMenu.xPositionOnScreen - Math.Max(0, offsetX),
+            __instance.ItemsToGrabMenu.yPositionOnScreen - Math.Max(0, offsetY));
+
+        // Move to the right
+        var x = Math.Max(
+            __instance.ItemsToGrabMenu.width + __instance.ItemsToGrabMenu.xPositionOnScreen,
+            __instance.inventory.width + __instance.inventory.xPositionOnScreen) + (IClickableMenu.borderWidth * 2);
+
+        __instance.trashCan.bounds.X = x;
+        __instance.okButton.bounds.X = x;
+        __instance.RepositionSideButtons();
+    }
+
     private static void ItemGrabMenu_constructor_prefix(ref Item? sourceItem, object context)
     {
         switch (context)
@@ -191,17 +235,26 @@ internal static class ModPatches
             .InsertAndAdvance(
                 new CodeInstruction(OpCodes.Ldarg_S, (short)14),
                 CodeInstruction.Call(typeof(ModPatches), nameof(GetAlternateChest)))
-            .MatchStartForward(
+            .MatchEndForward(
                 new CodeMatch(
                     static instruction => instruction.Calls(
-                        AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)))))
+                        AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)))),
+                new CodeMatch())
             .Repeat(static matcher =>
                 matcher
-                    .Advance(1)
                     .InsertAndAdvance(
                         new CodeInstruction(OpCodes.Ldarg_S, (short)14),
                         CodeInstruction.Call(typeof(ModPatches), nameof(GetMenuCapacity)))
             )
+            .Start()
+            .MatchEndForward(
+                new CodeMatch(static match =>
+                    match.opcode == OpCodes.Ldloc_S && match.operand is LocalBuilder { LocalIndex: 6 }),
+                new CodeMatch())
+            .Repeat(static matcher =>
+                matcher.InsertAndAdvance(
+                    new CodeInstruction(OpCodes.Ldarg_S, (short)14),
+                    CodeInstruction.Call(typeof(ModPatches), nameof(GetMenuRows))))
             .InstructionEnumeration();
 
     private static Chest? GetAlternateChest(Chest? result, Item? sourceItem) =>

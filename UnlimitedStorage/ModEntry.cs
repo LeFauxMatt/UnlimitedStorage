@@ -79,7 +79,7 @@ internal sealed class ModEntry : Mod
         ModState.Offset = 0;
         ModState.Columns = inventoryMenu.capacity / inventoryMenu.rows;
 
-        if (ModState.Config.ShowArrows)
+        if (ModState.Config.ShowArrows && inventoryMenu.rows > 1)
         {
             var topSlot = inventoryMenu.inventory[ModState.Columns - 1];
             var bottomSlot = inventoryMenu.inventory[inventoryMenu.capacity - 1];
@@ -107,8 +107,12 @@ internal sealed class ModEntry : Mod
         if (ModState.Config.EnableSearch)
         {
             var top = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top);
-            ModState.TextBox.Width = top[^1].bounds.Right - top[0].bounds.Left;
-            ModState.TextBox.X = top[0].bounds.Left;
+            ModState.TextBox.Width = Math.Max(
+                top[^1].bounds.Right - top[0].bounds.Left,
+                menu.inventory.inventory[^1].bounds.Right - menu.inventory.inventory[0].bounds.Left);
+            ModState.TextBox.X = Math.Min(
+                top[0].bounds.Left,
+                menu.inventory.inventory[0].bounds.Left);
         }
     }
 
@@ -157,7 +161,7 @@ internal sealed class ModEntry : Mod
         }
 
         var cursor = ModState.Cursor;
-        if (ModState.Config.ShowArrows)
+        if (ModState.Config.ShowArrows && inventoryMenu.rows > 1)
         {
             var maxOffset = inventoryMenu.GetMaxOffset(inventory);
             ModState.UpArrow.tryHover(cursor.X, cursor.Y);
@@ -239,7 +243,9 @@ internal sealed class ModEntry : Mod
 
             // Press up button
             case SButton.MouseLeft or SButton.ControllerA
-                when ModState.Config.ShowArrows && ModState.UpArrow.containsPoint(cursor.X, cursor.Y):
+                when ModState.Config.ShowArrows &&
+                     inventoryMenu.rows > 1 &&
+                     ModState.UpArrow.containsPoint(cursor.X, cursor.Y):
                 if (ModState.Offset <= 0)
                 {
                     return;
@@ -253,7 +259,9 @@ internal sealed class ModEntry : Mod
 
             // Press down button
             case SButton.MouseLeft or SButton.ControllerA
-                when ModState.Config.ShowArrows && ModState.DownArrow.containsPoint(cursor.X, cursor.Y):
+                when ModState.Config.ShowArrows &&
+                     inventoryMenu.rows > 1 &&
+                     ModState.DownArrow.containsPoint(cursor.X, cursor.Y):
                 if (ModState.Offset >= maxOffset * ModState.Columns)
                 {
                     return;

@@ -50,6 +50,13 @@ internal sealed class UnlimitedOption : ComplexOption
 
         this.height = this.baseHeight + 16;
 
+        var (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_Enabled_Name()).ToPoint();
+        component = new ClickableComponent(
+            new Rectangle(0, this.height, textWidth, textHeight),
+            "config-option.enabled.description",
+            I18n.ConfigOption_Enabled_Name());
+        this.components.Add(component);
+
         component = new ClickableTextureComponent(
             "enabled",
             new Rectangle(
@@ -57,24 +64,46 @@ internal sealed class UnlimitedOption : ComplexOption
                 this.height,
                 OptionsCheckbox.sourceRectChecked.Width * Game1.pixelZoom,
                 OptionsCheckbox.sourceRectChecked.Height * Game1.pixelZoom),
-            "Enabled",
-            "Enabled",
+            null,
+            null,
             Game1.mouseCursors,
             OptionsCheckbox.sourceRectChecked,
-            Game1.pixelZoom) { drawLabel = false };
+            Game1.pixelZoom);
 
         this.components.Add(component);
-        var (textWidth, textHeight) = Game1.dialogueFont.MeasureString(component.label).ToPoint();
         this.height += textHeight + 16;
 
+        (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_Unlimited_Name()).ToPoint();
         component = new ClickableComponent(
-            new Rectangle(0, this.height,
-                Game1.tileSize,
-                Game1.tileSize * 2),
-            "menuSize",
-            "Menu Size");
+            new Rectangle(0, this.height, textWidth, textHeight),
+            "config-option.unlimited.description",
+            I18n.ConfigOption_Unlimited_Name());
+        this.components.Add(component);
+
+        component = new ClickableTextureComponent(
+            "unlimited",
+            new Rectangle(
+                Math.Min(1200, Game1.uiViewport.Width - 200) / 2,
+                this.height,
+                OptionsCheckbox.sourceRectChecked.Width * Game1.pixelZoom,
+                OptionsCheckbox.sourceRectChecked.Height * Game1.pixelZoom),
+            null,
+            null,
+            Game1.mouseCursors,
+            OptionsCheckbox.sourceRectChecked,
+            Game1.pixelZoom);
 
         this.components.Add(component);
+        this.height += textHeight + 16;
+
+        (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_MenuSize_Name()).ToPoint();
+        component = new ClickableComponent(
+            new Rectangle(0, this.height, textWidth, textHeight),
+            "config-option.menu-size.description",
+            I18n.ConfigOption_MenuSize_Name());
+
+        this.components.Add(component);
+
         this.height += textHeight;
 
         for (var index = 0; index < 70; index++)
@@ -102,6 +131,7 @@ internal sealed class UnlimitedOption : ComplexOption
     public override void DrawOption(SpriteBatch spriteBatch, Vector2 pos)
     {
         var (mouseX, mouseY) = this.MousePos;
+        var hoverTitle = default(string);
         var hoverText = default(string);
         StorageOptions? storageOptions = null;
 
@@ -158,26 +188,30 @@ internal sealed class UnlimitedOption : ComplexOption
 
             if (component is ClickableTextureComponent clickableTextureComponent)
             {
-                if (hovered)
+                if (hovered && this.Pressed)
                 {
-                    hoverText ??= clickableTextureComponent.hoverText;
-                    if (this.Pressed)
+                    Game1.playSound("drumkit6");
+                    switch (component.name)
                     {
-                        Game1.playSound("drumkit6");
-                        storageOptions.Enabled = !storageOptions.Enabled;
+                        case "enabled":
+                            storageOptions.Enabled = !storageOptions.Enabled;
+                            break;
+                        case "unlimited":
+                            storageOptions.Unlimited = !storageOptions.Unlimited;
+                            break;
                     }
                 }
 
-                clickableTextureComponent.sourceRect = storageOptions.Enabled
+                var isChecked = component.name switch
+                {
+                    "enabled" => storageOptions.Enabled,
+                    "unlimited" => storageOptions.Unlimited,
+                    _ => false
+                };
+
+                clickableTextureComponent.sourceRect = isChecked
                     ? OptionsCheckbox.sourceRectChecked
                     : OptionsCheckbox.sourceRectUnchecked;
-
-                Utility.drawTextWithShadow(
-                    spriteBatch,
-                    component.label,
-                    Game1.dialogueFont,
-                    pos + new Vector2(0, component.bounds.Y),
-                    SpriteText.color_Gray);
 
                 clickableTextureComponent.draw(
                     spriteBatch,
@@ -222,6 +256,7 @@ internal sealed class UnlimitedOption : ComplexOption
 
                 if (hovered)
                 {
+                    hoverText ??= $"{col + 1} x {row + 1}";
                     spriteBatch.Draw(
                         Game1.menuTexture,
                         pos + component.bounds.Location.ToVector2(),
@@ -239,6 +274,14 @@ internal sealed class UnlimitedOption : ComplexOption
                         storageOptions.MenuHeight = row + 1;
                     }
                 }
+
+                continue;
+            }
+
+            if (component.bounds.Contains(mouseX, mouseY))
+            {
+                hoverTitle ??= component.label;
+                hoverText ??= this.Helper.Translation.Get(component.name);
             }
 
             Utility.drawTextWithShadow(
@@ -249,7 +292,11 @@ internal sealed class UnlimitedOption : ComplexOption
                 SpriteText.color_Gray);
         }
 
-        if (!string.IsNullOrWhiteSpace(hoverText))
+        if (!string.IsNullOrWhiteSpace(hoverTitle))
+        {
+            IClickableMenu.drawHoverText(spriteBatch, hoverText, Game1.smallFont, boldTitleText: hoverTitle);
+        }
+        else if (!string.IsNullOrWhiteSpace(hoverText))
         {
             IClickableMenu.drawHoverText(spriteBatch, hoverText, Game1.smallFont);
         }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Force.DeepCloner;
 using LeFauxMods.Common.Interface;
 using LeFauxMods.Common.Models;
 using LeFauxMods.UnlimitedStorage.Models;
@@ -49,9 +50,9 @@ internal sealed class ModConfig : IModConfig<ModConfig>, IConfigWithLogAmount
         other.EnableSearch = this.EnableSearch;
         other.ShowArrows = this.ShowArrows;
         other.StorageOptions.Clear();
-        foreach (var (key, value) in this.StorageOptions)
+        foreach (var (itemId, storageOptions) in this.StorageOptions)
         {
-            other.StorageOptions.Add(key, value);
+            other.StorageOptions.Add(itemId, storageOptions.DeepClone());
         }
     }
 
@@ -66,14 +67,7 @@ internal sealed class ModConfig : IModConfig<ModConfig>, IConfigWithLogAmount
         foreach (var (itemId, storageOptions) in this.StorageOptions)
         {
             sb.AppendLine(itemId)
-                .AppendLine(CultureInfo.InvariantCulture,
-                    $"{nameof(storageOptions.Capacity),25}: {storageOptions.Capacity}")
-                .AppendLine(CultureInfo.InvariantCulture,
-                    $"{nameof(storageOptions.Enabled),25}: {storageOptions.Enabled}")
-                .AppendLine(CultureInfo.InvariantCulture,
-                    $"{nameof(storageOptions.MenuHeight),25}: {storageOptions.MenuHeight}")
-                .AppendLine(CultureInfo.InvariantCulture,
-                    $"{nameof(storageOptions.MenuWidth),25}: {storageOptions.MenuWidth}");
+                .AppendLine(storageOptions.GetSummary());
         }
 
         return sb.ToString();
