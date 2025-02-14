@@ -1,8 +1,11 @@
+using LeFauxMods.Common.Models;
 using LeFauxMods.Common.Services;
 using LeFauxMods.Common.Utilities;
+using LeFauxMods.UnlimitedStorage.Models;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Utilities;
+using StardewValley.Inventories;
 using StardewValley.Menus;
 using StardewValley.Objects;
 
@@ -38,6 +41,8 @@ internal sealed class ModState
             new Rectangle(421, 459, 11, 12),
             Game1.pixelZoom) { myID = SharedConstants.UpArrowId, downNeighborID = SharedConstants.DownArrowId });
 
+    private Dictionary<string, StorageOptions>? data;
+
     private ModState(IModHelper helper)
     {
         this.helper = helper;
@@ -51,6 +56,8 @@ internal sealed class ModState
     public static Point Cursor =>
         Utility.ModifyCoordinatesForUIScale(Instance!.helper.Input.GetCursorPosition().GetScaledScreenPixels())
             .ToPoint();
+
+    public static Dictionary<string, StorageOptions> Data => Instance!.data ??= Instance.GetData();
 
     public static ClickableTextureComponent DownArrow => Instance!.downArrow.Value;
 
@@ -70,35 +77,46 @@ internal sealed class ModState
         set => Instance!.offset.Value = value;
     }
 
+    public static bool IsEnabled(string itemId) =>
+        Data.TryGetValue(itemId, out var storageOptions) && storageOptions.Enabled;
+
     public static void Init(IModHelper helper) => Instance ??= new ModState(helper);
 
     public static bool TryGetMenu(
         [NotNullWhen(true)] out ItemGrabMenu? menu,
         [NotNullWhen(true)] out InventoryMenu? inventoryMenu,
-        [NotNullWhen(true)] out Chest? chest)
+        [NotNullWhen(true)] out IInventory? inventory)
     {
         if (Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } itemsToGrabMenu } itemGrabMenu)
         {
             menu = null;
             inventoryMenu = null;
-            chest = null;
+            inventory = null;
             return false;
         }
 
         menu = itemGrabMenu;
         inventoryMenu = itemsToGrabMenu;
-        switch (itemGrabMenu.sourceItem ?? itemGrabMenu.context)
+        switch (itemGrabMenu.sourceItem)
         {
-            case SObject { heldObject.Value: Chest heldObject } sourceObject
-                when Config.EnabledIds.Contains(sourceObject.ItemId):
-                chest = heldObject;
+            case SObject { heldObject.Value: Chest heldChest } sourceObject
+                when IsEnabled(sourceObject.ItemId):
+                inventory = heldChest.GetItemsForPlayer();
                 return true;
-            case Chest sourceItem when Config.EnabledIds.Contains(sourceItem.ItemId):
-                chest = sourceItem;
+            case Chest sourceItem when IsEnabled(sourceItem.ItemId):
+                inventory = sourceItem.GetItemsForPlayer();
                 return true;
         }
 
-        chest = null;
+        switch (itemGrabMenu.context)
+        {
+            // Chests Anywhere
+            case GameLocation location when location.IsBuildableLocation():
+                inventory = (location as Farm ?? Game1.getFarm()).getShippingBin(Game1.player);
+                return true;
+        }
+
+        inventory = null;
         return false;
     }
 
@@ -143,5 +161,27 @@ internal sealed class ModState
 
         Offset -= Columns;
         return true;
+    }
+
+    private static Func<Dictionary<string, string>?> GetCustomFields(string itemId) =>
+        () => Game1.bigCraftableData.TryGetValue(itemId, out var bigCraftableData)
+            ? bigCraftableData.CustomFields
+            : null;
+
+    private Dictionary<string, StorageOptions> GetData()
+    {
+        this.data ??= new Dictionary<string, StorageOptions>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (itemId, _) in Game1.bigCraftableData)
+        {
+            if (!Config.StorageOptions.TryGetValue(itemId, out var storageOptions) || !storageOptions.Enabled)
+            {
+                continue;
+            }
+
+            var customFields = new DictionaryModel(GetCustomFields(itemId));
+            this.data[itemId] = new StorageOptions(customFields);
+        }
+
+        return this.data;
     }
 }
