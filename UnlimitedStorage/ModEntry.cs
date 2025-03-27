@@ -1,7 +1,6 @@
 using LeFauxMods.Common.Models;
 using LeFauxMods.Common.Utilities;
 using LeFauxMods.UnlimitedStorage.Services;
-using LeFauxMods.UnlimitedStorage.Utilities;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI.Events;
 using StardewValley.GameData.BigCraftables;
@@ -26,6 +25,7 @@ internal sealed class ModEntry : Mod
         // Events
         helper.Events.Content.AssetRequested += OnAssetRequested;
         helper.Events.Display.MenuChanged += OnMenuChanged;
+        helper.Events.Display.WindowResized += OnWindowResized;
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
@@ -35,7 +35,7 @@ internal sealed class ModEntry : Mod
 
     private static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
-        if (!ModState.Config.StorageOptions.Any() || !e.NameWithoutLocale.IsEquivalentTo(ModConstants.BigCraftableData))
+        if (!e.NameWithoutLocale.IsEquivalentTo(ModConstants.BigCraftableData))
         {
             return;
         }
@@ -46,8 +46,7 @@ internal sealed class ModEntry : Mod
                 var data = assetData.AsDictionary<string, BigCraftableData>().Data;
                 foreach (var (itemId, storageOptions) in ModState.Config.StorageOptions)
                 {
-                    if (!data.TryGetValue(itemId, out var bigCraftableData) || !storageOptions.Enabled ||
-                        storageOptions.GetData() is not { } dict)
+                    if (!data.TryGetValue(itemId, out var bigCraftableData) || storageOptions.GetData() is not { } dict)
                     {
                         continue;
                     }
@@ -55,7 +54,7 @@ internal sealed class ModEntry : Mod
                     bigCraftableData.CustomFields ??= [];
                     foreach (var (key, value) in dict)
                     {
-                        bigCraftableData.CustomFields[key] = value;
+                        _ = bigCraftableData.CustomFields.TryAdd(key, value);
                     }
                 }
             },
@@ -64,55 +63,56 @@ internal sealed class ModEntry : Mod
 
     private static void OnMenuChanged(object? sender, MenuChangedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var inventory))
+        if (!ModState.TryGetContext(out var context))
         {
-            ModState.Offset = 0;
-            ModState.Columns = 0;
             return;
         }
 
-        if ((e.OldMenu as ItemGrabMenu)?.context == menu.context)
+        if ((e.OldMenu as ItemGrabMenu)?.context == context.Menu.context)
         {
             return;
         }
 
         ModState.Offset = 0;
-        ModState.Columns = inventoryMenu.capacity / inventoryMenu.rows;
+        context.Menu.allClickableComponents.Add(ModState.UpArrow);
+        context.Menu.allClickableComponents.Add(ModState.DownArrow);
+        SetupMenu(context);
+    }
 
-        if (ModState.Config.ShowArrows && inventoryMenu.rows > 1)
+    private static void SetupMenu(ModState.CachedContext context)
+    {
+        var (_, topMenu, bottomMenu, _, storageOptions) = context;
+        if (ModState.Config.ShowArrows && storageOptions.MenuHeight > 1)
         {
-            var topSlot = inventoryMenu.inventory[ModState.Columns - 1];
-            var bottomSlot = inventoryMenu.inventory[inventoryMenu.capacity - 1];
+            var topSlot = topMenu.inventory[storageOptions.MenuWidth - 1];
+            var bottomSlot = topMenu.inventory[topMenu.capacity - 1];
 
             // Align up arrow to top-right slot
-            ModState.UpArrow.bounds.X = inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8;
+            ModState.UpArrow.bounds.X = topMenu.xPositionOnScreen + topMenu.width + 8;
             ModState.UpArrow.bounds.Y =
-                inventoryMenu.inventory[ModState.Columns - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
+                topMenu.inventory[storageOptions.MenuWidth - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
             ModState.UpArrow.rightNeighborID = topSlot.rightNeighborID;
             ModState.UpArrow.leftNeighborID = topSlot.myID;
             topSlot.rightNeighborID = SharedConstants.UpArrowId;
 
             // Align down arrow to bottom-right slot
-            ModState.DownArrow.bounds.X = inventoryMenu.xPositionOnScreen + inventoryMenu.width + 8;
+            ModState.DownArrow.bounds.X = topMenu.xPositionOnScreen + topMenu.width + 8;
             ModState.DownArrow.bounds.Y =
-                inventoryMenu.inventory[inventoryMenu.capacity - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
+                topMenu.inventory[topMenu.capacity - 1].bounds.Center.Y - (6 * Game1.pixelZoom);
             ModState.DownArrow.rightNeighborID = bottomSlot.rightNeighborID;
             ModState.DownArrow.leftNeighborID = bottomSlot.myID;
             bottomSlot.rightNeighborID = SharedConstants.DownArrowId;
-
-            menu.allClickableComponents.Add(ModState.UpArrow);
-            menu.allClickableComponents.Add(ModState.DownArrow);
         }
 
         if (ModState.Config.EnableSearch)
         {
-            var top = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top);
+            var top = topMenu.GetBorder(InventoryMenu.BorderSide.Top);
+            var bottom = bottomMenu.GetBorder(InventoryMenu.BorderSide.Bottom);
+
+            ModState.TextBox.X = Math.Min(top[0].bounds.Left, bottom[0].bounds.Left);
             ModState.TextBox.Width = Math.Max(
                 top[^1].bounds.Right - top[0].bounds.Left,
-                menu.inventory.inventory[^1].bounds.Right - menu.inventory.inventory[0].bounds.Left);
-            ModState.TextBox.X = Math.Min(
-                top[0].bounds.Left,
-                menu.inventory.inventory[0].bounds.Left);
+                bottom[^1].bounds.Right - bottom[0].bounds.Left);
         }
     }
 
@@ -121,10 +121,10 @@ internal sealed class ModEntry : Mod
         switch (Game1.player.currentLocation)
         {
             case FarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
+                fridge.ItemId = ModConstants.MiniFridgeId;
                 break;
             case IslandFarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
+                fridge.ItemId = ModConstants.MiniFridgeId;
                 break;
         }
     }
@@ -134,17 +134,44 @@ internal sealed class ModEntry : Mod
         switch (e.NewLocation)
         {
             case FarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
+                fridge.ItemId = ModConstants.MiniFridgeId;
                 break;
             case IslandFarmHouse { fridge.Value: { } fridge }:
-                fridge.ItemId = ModState.IsEnabled("216") ? "216" : "130";
+                fridge.ItemId = ModConstants.MiniFridgeId;
                 break;
         }
     }
 
+    private static void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
+    {
+        if (!ModState.TryGetContext(out var context))
+        {
+            return;
+        }
+
+        var (_, topMenu, _, _, storageOptions) = context;
+        var cursor = ModState.Cursor;
+        if (!topMenu.isWithinBounds(cursor.X, cursor.Y))
+        {
+            return;
+        }
+
+        ModState.Offset += e.Delta > 0 ? -storageOptions.MenuWidth : storageOptions.MenuWidth;
+    }
+
+    private static void OnWindowResized(object? sender, WindowResizedEventArgs e)
+    {
+        if (!ModState.TryGetContext(out var context))
+        {
+            return;
+        }
+
+        SetupMenu(context);
+    }
+
     private void OnButtonsChanged(object? sender, ButtonsChangedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out _, out _, out _) || !ModState.Config.ToggleSearch.JustPressed())
+        if (!ModState.TryGetContext(out _) || !ModState.Config.ToggleSearch.JustPressed())
         {
             return;
         }
@@ -155,15 +182,16 @@ internal sealed class ModEntry : Mod
 
     private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var inventory))
+        if (!ModState.TryGetContext(out var context))
         {
             return;
         }
 
+        var (menu, topMenu, _, inventory, storageOptions) = context;
         var cursor = ModState.Cursor;
-        if (ModState.Config.ShowArrows && inventoryMenu.rows > 1)
+        if (ModState.Config.ShowArrows && storageOptions.MenuHeight > 1)
         {
-            var maxOffset = inventoryMenu.GetMaxOffset(inventory);
+            var maxOffset = storageOptions.GetMaxOffset(inventory.Count);
             ModState.UpArrow.tryHover(cursor.X, cursor.Y);
             ModState.UpArrow.draw(
                 e.SpriteBatch,
@@ -173,13 +201,13 @@ internal sealed class ModEntry : Mod
             ModState.DownArrow.tryHover(cursor.X, cursor.Y);
             ModState.DownArrow.draw(
                 e.SpriteBatch,
-                ModState.Offset < maxOffset * ModState.Columns ? Color.White : Color.Gray * 0.8f,
+                ModState.Offset < maxOffset * storageOptions.MenuWidth ? Color.White : Color.Gray * 0.8f,
                 1f);
         }
 
         if (ModState.Config.EnableSearch)
         {
-            ModState.TextBox.Y = inventoryMenu.yPositionOnScreen - ModState.TextBox.Height - (13 * Game1.pixelZoom);
+            ModState.TextBox.Y = topMenu.yPositionOnScreen - ModState.TextBox.Height - (13 * Game1.pixelZoom);
 
             // Adjust for Chests Anywhere
             if (this.Helper.ModRegistry.IsLoaded(ModConstants.ChestsAnywhereId))
@@ -202,7 +230,7 @@ internal sealed class ModEntry : Mod
             }
 
             // Adjust for Large Chest
-            if (inventoryMenu.rows >= 5)
+            if (topMenu.rows >= 5)
             {
                 ModState.TextBox.Y += 5 * Game1.pixelZoom;
             }
@@ -216,43 +244,42 @@ internal sealed class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (!ModState.TryGetMenu(out var menu, out var inventoryMenu, out var chest))
+        if (!ModState.TryGetContext(out var context))
         {
             return;
         }
 
+        var (menu, topMenu, _, inventory, storageOptions) = context;
         var cursor = ModState.Cursor;
-        var maxOffset = ModState.Columns == 0 ? 0 : inventoryMenu.GetMaxOffset(chest);
+        var maxOffset = storageOptions.MenuWidth == 0 ? 0 : storageOptions.GetMaxOffset(inventory.Count);
         switch (e.Button)
         {
-            case SButton.DPadUp or SButton.LeftThumbstickUp when maxOffset > 0:
-                if (ModState.TryMoveUp(menu, inventoryMenu))
-                {
-                    this.Helper.Input.Suppress(e.Button);
-                }
-
+            case SButton.DPadUp or SButton.LeftThumbstickUp
+                when maxOffset > 0 &&
+                     ModState.Offset > 0 &&
+                     menu.currentlySnappedComponent is { } component &&
+                     topMenu.GetBorder(InventoryMenu.BorderSide.Top).Contains(component):
+                ModState.Offset -= storageOptions.MenuWidth;
+                this.Helper.Input.Suppress(e.Button);
                 return;
 
-            case SButton.DPadDown or SButton.LeftThumbstickDown when maxOffset > 0:
-                if (ModState.TryMoveDown(menu, inventoryMenu, maxOffset))
-                {
-                    this.Helper.Input.Suppress(e.Button);
-                }
-
+            case SButton.DPadDown or SButton.LeftThumbstickDown
+                when maxOffset > 0 &&
+                     ModState.Offset < maxOffset * storageOptions.MenuWidth &&
+                     menu.currentlySnappedComponent is { } component &&
+                     topMenu.GetBorder(InventoryMenu.BorderSide.Bottom).Contains(component):
+                ModState.Offset += storageOptions.MenuWidth;
+                this.Helper.Input.Suppress(e.Button);
                 return;
 
             // Press up button
             case SButton.MouseLeft or SButton.ControllerA
                 when ModState.Config.ShowArrows &&
-                     inventoryMenu.rows > 1 &&
+                     maxOffset > 0 &&
+                     ModState.Offset > 0 &&
                      ModState.UpArrow.containsPoint(cursor.X, cursor.Y):
-                if (ModState.Offset <= 0)
-                {
-                    return;
-                }
-
                 ModState.UpArrow.scale = 3f;
-                ModState.Offset -= ModState.Columns;
+                ModState.Offset -= storageOptions.MenuWidth;
                 this.Helper.Input.Suppress(e.Button);
                 _ = Game1.playSound("drumkit6");
                 return;
@@ -260,15 +287,11 @@ internal sealed class ModEntry : Mod
             // Press down button
             case SButton.MouseLeft or SButton.ControllerA
                 when ModState.Config.ShowArrows &&
-                     inventoryMenu.rows > 1 &&
+                     maxOffset > 0 &&
+                     ModState.Offset < maxOffset * storageOptions.MenuWidth &&
                      ModState.DownArrow.containsPoint(cursor.X, cursor.Y):
-                if (ModState.Offset >= maxOffset * ModState.Columns)
-                {
-                    return;
-                }
-
                 ModState.DownArrow.scale = 3f;
-                ModState.Offset += ModState.Columns;
+                ModState.Offset += storageOptions.MenuWidth;
                 this.Helper.Input.Suppress(e.Button);
                 _ = Game1.playSound("drumkit6");
                 return;
@@ -325,11 +348,11 @@ internal sealed class ModEntry : Mod
     {
         _ = this.Helper.GameContent.InvalidateCache(ModConstants.BigCraftableData);
         this.Helper.Events.Display.RenderedActiveMenu -= this.OnRenderedActiveMenu;
-        this.Helper.Events.Input.MouseWheelScrolled -= this.OnMouseWheelScrolled;
+        this.Helper.Events.Input.MouseWheelScrolled -= OnMouseWheelScrolled;
 
         if (e.Config.EnableScrolling)
         {
-            this.Helper.Events.Input.MouseWheelScrolled += this.OnMouseWheelScrolled;
+            this.Helper.Events.Input.MouseWheelScrolled += OnMouseWheelScrolled;
         }
 
         if (e.Config.ShowArrows || e.Config.EnableSearch)
@@ -340,20 +363,4 @@ internal sealed class ModEntry : Mod
 
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e) =>
         _ = new ConfigMenu(this.Helper, this.ModManifest);
-
-    private void OnMouseWheelScrolled(object? sender, MouseWheelScrolledEventArgs e)
-    {
-        if (!ModState.TryGetMenu(out _, out var inventoryMenu, out var inventory))
-        {
-            return;
-        }
-
-        var cursor = ModState.Cursor;
-        if (!inventoryMenu.isWithinBounds(cursor.X, cursor.Y))
-        {
-            return;
-        }
-
-        ModState.Offset += e.Delta > 0 ? -ModState.Columns : ModState.Columns;
-    }
 }

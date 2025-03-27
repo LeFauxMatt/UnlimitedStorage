@@ -1,4 +1,6 @@
 {
+  "config-option.capacity.name": "Capacity",
+  "config-option.capacity.description": "Set the capacity for this chest type.",
   "config-option.enabled.name": "Enabled",
   "config-option.enabled.description": "Enable features for this chest type.",
   "config-option.enable-scrolling.name": "启用滚动",
@@ -11,6 +13,5 @@
   "config-option.show-arrows.description": "在物品栏菜单上显示箭头按钮.",
   "config-option.toggle-search.name": "切换搜索",
   "config-option.toggle-search.description": "按键绑定以切换搜索栏的显示或隐藏.",
-  "config-option.unlimited.name": "无限制",
-  "config-option.unlimited.description": "使物品栏类型可以容纳无限数量的物品."
+  "config-option.unlimited.name": "无限制"
 }

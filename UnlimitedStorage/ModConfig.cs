@@ -23,15 +23,15 @@ internal sealed class ModConfig : IModConfig<ModConfig>, IConfigWithLogAmount
     /// <summary>Gets or sets the storage options.</summary>
     public Dictionary<string, StorageOptions> StorageOptions { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "130", new StorageOptions() },
-        { "165", new StorageOptions() },
-        { "216", new StorageOptions() },
-        { "232", new StorageOptions() },
-        { "248", new StorageOptions() },
-        { "256", new StorageOptions() },
-        { "275", new StorageOptions() },
-        { "BigChest", new StorageOptions() },
-        { "BigStoneChest", new StorageOptions() }
+        { ModConstants.ChestId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.AutoGrabberId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.MiniFridgeId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.StoneChestId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.MiniShippingBinId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.JunimoChestId, new StorageOptions(StorageSize.Large) },
+        { ModConstants.HopperId, new StorageOptions(StorageSize.Large) },
+        { "BigChest", new StorageOptions(StorageSize.Unlimited) },
+        { "BigStoneChest", new StorageOptions(StorageSize.Unlimited) }
     };
 
     /// <summary>Gets or sets the keybind to show the search bar.</summary>

@@ -61,7 +61,9 @@ internal static class ModPatches
     {
         if (ModState.Data.TryGetValue(__instance.ItemId, out var storageOptions) && storageOptions.Enabled)
         {
-            __result = Math.Max(__result, storageOptions.Capacity);
+            __result = storageOptions.Capacity == -1
+                ? __instance.GetItemsForPlayer().Count + 1
+                : Math.Max(__result, storageOptions.Capacity);
         }
     }
 
@@ -69,7 +71,7 @@ internal static class ModPatches
     {
         if (sourceItem is not null && ModState.Data.TryGetValue(sourceItem.ItemId, out var storageOptions))
         {
-            return storageOptions.MenuWidth * storageOptions.MenuHeight;
+            return Math.Min(14, storageOptions.MenuWidth) * Math.Min(5, storageOptions.MenuHeight);
         }
 
         return sourceItem switch
@@ -89,7 +91,7 @@ internal static class ModPatches
     {
         if (sourceItem is not null && ModState.Data.TryGetValue(sourceItem.ItemId, out var storageOptions))
         {
-            return storageOptions.MenuHeight;
+            return Math.Min(5, storageOptions.MenuHeight);
         }
 
         return rows;
@@ -111,11 +113,10 @@ internal static class ModPatches
     private static InventoryMenu.highlightThisItem GetHighlightMethod(InventoryMenu.highlightThisItem highlightMethod,
         InventoryMenu instance)
     {
-        if (ModState.Columns == 0 ||
-            !ModState.Config.EnableSearch ||
+        if (!ModState.Config.EnableSearch ||
             string.IsNullOrWhiteSpace(ModState.TextBox.Text) ||
-            !ModState.TryGetMenu(out _, out var inventoryMenu, out _) ||
-            !ReferenceEquals(instance, inventoryMenu))
+            !ModState.TryGetContext(out var context) ||
+            !ReferenceEquals(instance, context.TopMenu))
         {
             return highlightMethod;
         }
@@ -136,14 +137,14 @@ internal static class ModPatches
     [SuppressMessage("ReSharper", "RedundantAssignment", Justification = "Harmony")]
     private static void TryAdjustInventory(InventoryMenu __instance, ref IInventory? __state)
     {
-        if (ModState.Columns == 0 ||
-            !ModState.TryGetMenu(out _, out var inventoryMenu, out var inventory) ||
-            !ReferenceEquals(__instance, inventoryMenu))
+        if (!ModState.TryGetContext(out var context) ||
+            !ReferenceEquals(__instance, context.TopMenu))
         {
             return;
         }
 
-        var maxOffset = __instance.GetMaxOffset(inventory);
+        var (_, _, _, inventory, storageOptions) = context;
+        var maxOffset = storageOptions.GetMaxOffset(inventory.Count);
         __state = inventory;
 
         var adjustedInventory = __state.AsEnumerable();
@@ -152,7 +153,7 @@ internal static class ModPatches
             adjustedInventory = adjustedInventory.OrderBySearch();
         }
 
-        ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * ModState.Columns);
+        ModState.Offset = Math.Min(Math.Max(0, ModState.Offset), maxOffset * storageOptions.MenuWidth);
         if (maxOffset > 0)
         {
             adjustedInventory = adjustedInventory.Skip(ModState.Offset).Take(__instance.capacity);
@@ -183,6 +184,7 @@ internal static class ModPatches
         }
     }
 
+    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
     private static void ItemGrabMenu_constructor_postfix(ItemGrabMenu __instance)
     {
         var offsetX =
@@ -220,7 +222,8 @@ internal static class ModPatches
     {
         switch (context)
         {
-            case SObject { QualifiedItemId: "(BC)165" } item:
+            case SObject { ItemId: ModConstants.AutoGrabberId, heldObject.Value: Chest chest } item:
+                chest.ItemId = ModConstants.AutoGrabberId;
                 sourceItem = item;
                 return;
         }
@@ -260,7 +263,7 @@ internal static class ModPatches
     private static Chest? GetAlternateChest(Chest? result, Item? sourceItem) =>
         result ?? sourceItem switch
         {
-            SObject { QualifiedItemId: "(BC)165", heldObject.Value: Chest heldChest } => heldChest,
+            SObject { ItemId: ModConstants.AutoGrabberId, heldObject.Value: Chest heldChest } => heldChest,
             _ => null
         };
 }

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using LeFauxMods.Common.Integrations.GenericModConfigMenu;
 using LeFauxMods.Common.Models;
+using LeFauxMods.Common.Utilities;
 using LeFauxMods.UnlimitedStorage.Models;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -18,12 +19,19 @@ internal sealed class UnlimitedOption : ComplexOption
     private readonly Dictionary<string, CachedItemData> cachedItems = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ClickableComponent> components = [];
     private readonly int height;
+    private bool held;
+    private int offset;
     private int selectedIndex = -1;
 
     public UnlimitedOption(IModHelper helper)
         : base(helper)
     {
-        var itemIds = ModState.ConfigHelper.Default.StorageOptions.Keys.ToImmutableArray();
+        var itemIds = ModState.ConfigHelper.Default.StorageOptions.Keys.Union(Game1.bigCraftableData
+                .Where(static kvp => kvp.Value.CustomFields?.GetBool(ModConstants.ModEnabled) == true)
+                .Select(static kvp => kvp.Key))
+            .Distinct()
+            .ToImmutableArray();
+
         this.baseHeight = ((Game1.tileSize * 2) + 8) * (int)Math.Ceiling(itemIds.Length / 14f);
 
         ClickableComponent component;
@@ -50,48 +58,50 @@ internal sealed class UnlimitedOption : ComplexOption
 
         this.height = this.baseHeight + 16;
 
+        component = new ClickableTextureComponent(
+            "enabled",
+            new Rectangle(
+                0,
+                this.height,
+                OptionsCheckbox.sourceRectChecked.Width * Game1.pixelZoom,
+                OptionsCheckbox.sourceRectChecked.Height * Game1.pixelZoom),
+            null,
+            null,
+            Game1.mouseCursors,
+            OptionsCheckbox.sourceRectChecked,
+            Game1.pixelZoom);
+
+        this.components.Add(component);
+
         var (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_Enabled_Name()).ToPoint();
         component = new ClickableComponent(
             new Rectangle(0, this.height, textWidth, textHeight),
             "config-option.enabled.description",
             I18n.ConfigOption_Enabled_Name());
-        this.components.Add(component);
-
-        component = new ClickableTextureComponent(
-            "enabled",
-            new Rectangle(
-                Math.Min(1200, Game1.uiViewport.Width - 200) / 2,
-                this.height,
-                OptionsCheckbox.sourceRectChecked.Width * Game1.pixelZoom,
-                OptionsCheckbox.sourceRectChecked.Height * Game1.pixelZoom),
-            null,
-            null,
-            Game1.mouseCursors,
-            OptionsCheckbox.sourceRectChecked,
-            Game1.pixelZoom);
 
         this.components.Add(component);
         this.height += textHeight + 16;
 
-        (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_Unlimited_Name()).ToPoint();
-        component = new ClickableComponent(
-            new Rectangle(0, this.height, textWidth, textHeight),
-            "config-option.unlimited.description",
-            I18n.ConfigOption_Unlimited_Name());
-        this.components.Add(component);
-
         component = new ClickableTextureComponent(
-            "unlimited",
+            "capacity",
             new Rectangle(
-                Math.Min(1200, Game1.uiViewport.Width - 200) / 2,
-                this.height,
-                OptionsCheckbox.sourceRectChecked.Width * Game1.pixelZoom,
-                OptionsCheckbox.sourceRectChecked.Height * Game1.pixelZoom),
+                0,
+                this.height + 8,
+                10 * Game1.pixelZoom,
+                6 * Game1.pixelZoom),
             null,
             null,
             Game1.mouseCursors,
-            OptionsCheckbox.sourceRectChecked,
+            new Rectangle(420, 441, 10, 6),
             Game1.pixelZoom);
+
+        this.components.Add(component);
+
+        (textWidth, textHeight) = Game1.dialogueFont.MeasureString(I18n.ConfigOption_Capacity_Name()).ToPoint();
+        component = new ClickableComponent(
+            new Rectangle(0, this.height, textWidth, textHeight),
+            "config-option.capacity.description",
+            I18n.ConfigOption_Capacity_Name());
 
         this.components.Add(component);
         this.height += textHeight + 16;
@@ -103,7 +113,6 @@ internal sealed class UnlimitedOption : ComplexOption
             I18n.ConfigOption_MenuSize_Name());
 
         this.components.Add(component);
-
         this.height += textHeight;
 
         for (var index = 0; index < 70; index++)
@@ -128,6 +137,7 @@ internal sealed class UnlimitedOption : ComplexOption
     /// <inheritdoc />
     public override int Height => this.selectedIndex != -1 ? this.height : this.baseHeight;
 
+    /// <inheritdoc />
     public override void DrawOption(SpriteBatch spriteBatch, Vector2 pos)
     {
         var (mouseX, mouseY) = this.MousePos;
@@ -188,38 +198,88 @@ internal sealed class UnlimitedOption : ComplexOption
 
             if (component is ClickableTextureComponent clickableTextureComponent)
             {
-                if (hovered && this.Pressed)
+                switch (component.name)
                 {
-                    Game1.playSound("drumkit6");
-                    switch (component.name)
-                    {
-                        case "enabled":
+                    case "enabled":
+                        if (this.Pressed &&
+                            (component.bounds with { X = this.AvailableWidth / 2 }).Contains(mouseX, mouseY))
+                        {
+                            Game1.playSound("drumkit6");
                             storageOptions.Enabled = !storageOptions.Enabled;
-                            break;
-                        case "unlimited":
-                            storageOptions.Unlimited = !storageOptions.Unlimited;
-                            break;
-                    }
+                        }
+
+                        clickableTextureComponent.sourceRect = storageOptions.Enabled
+                            ? OptionsCheckbox.sourceRectChecked
+                            : OptionsCheckbox.sourceRectUnchecked;
+
+                        clickableTextureComponent.draw(
+                            spriteBatch,
+                            Color.White,
+                            1f,
+                            0,
+                            (int)pos.X + (this.AvailableWidth / 2),
+                            (int)pos.Y);
+
+                        continue;
+
+                    case "capacity":
+                        const int units = 5;
+                        var barWidth = (this.AvailableWidth / 2) - 200;
+                        var unitWidth = (barWidth - component.bounds.Width) / (units - 1);
+
+                        this.held =
+                            (this.held && this.Held) ||
+                            (this.Pressed &&
+                             (component.bounds with { X = this.AvailableWidth / 2, Width = barWidth }).Contains(mouseX,
+                                 mouseY));
+
+                        var unit = (int)Math.Round((float)this.offset / unitWidth, 1);
+                        this.offset = this.held
+                            ? Math.Min(barWidth - component.bounds.Width,
+                                Math.Max(0, mouseX - (this.AvailableWidth / 2)))
+                            : unit * unitWidth;
+
+                        IClickableMenu.drawTextureBox(
+                            spriteBatch,
+                            Game1.mouseCursors,
+                            new Rectangle(403, 383, 6, 6),
+                            (int)pos.X + (this.AvailableWidth / 2),
+                            (int)pos.Y + component.bounds.Y,
+                            barWidth,
+                            component.bounds.Height,
+                            Color.White,
+                            Game1.pixelZoom,
+                            false);
+
+                        clickableTextureComponent.draw(
+                            spriteBatch,
+                            Color.White,
+                            1f,
+                            0,
+                            (int)pos.X + (this.AvailableWidth / 2) + this.offset,
+                            (int)pos.Y);
+
+                        storageOptions.Capacity = unit switch
+                        {
+                            4 => -1,
+                            _ => (unit + 1) * storageOptions.MenuWidth * storageOptions.MenuHeight
+                        };
+
+                        var choice = storageOptions.Capacity switch
+                        {
+                            -1 => I18n.ConfigOption_Unlimited_Name(),
+                            _ => $"{storageOptions.Capacity}"
+                        };
+
+                        Utility.drawTextWithShadow(
+                            spriteBatch,
+                            choice,
+                            Game1.dialogueFont,
+                            pos + new Vector2(this.AvailableWidth - 184, component.bounds.Y - 8),
+                            SpriteText.color_Gray);
+
+                        continue;
                 }
-
-                var isChecked = component.name switch
-                {
-                    "enabled" => storageOptions.Enabled,
-                    "unlimited" => storageOptions.Unlimited,
-                    _ => false
-                };
-
-                clickableTextureComponent.sourceRect = isChecked
-                    ? OptionsCheckbox.sourceRectChecked
-                    : OptionsCheckbox.sourceRectUnchecked;
-
-                clickableTextureComponent.draw(
-                    spriteBatch,
-                    Color.White,
-                    1f,
-                    0,
-                    (int)pos.X,
-                    (int)pos.Y);
 
                 continue;
             }
