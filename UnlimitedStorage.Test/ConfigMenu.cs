@@ -1,6 +1,6 @@
 using LeFauxMods.Common.Services;
 
-namespace LeFauxMods.UnlimitedStorage.Test.Services;
+namespace LeFauxMods.UnlimitedStorage.Test;
 
 /// <inheritdoc />
 internal sealed class ConfigMenu(IModHelper helper, IManifest manifest)

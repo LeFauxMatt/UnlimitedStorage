@@ -233,11 +233,17 @@ internal sealed class UnlimitedOption : ComplexOption
                              (component.bounds with { X = this.AvailableWidth / 2, Width = barWidth }).Contains(mouseX,
                                  mouseY));
 
-                        var unit = (int)Math.Round((float)this.offset / unitWidth, 1);
+                        var menuCapacity = storageOptions.MenuWidth * storageOptions.MenuHeight;
+                        var unit = storageOptions.Capacity == -1
+                            ? units - 1
+                            : (int)Math.Round((float)storageOptions.Capacity / menuCapacity, 1) - 1;
+
                         this.offset = this.held
                             ? Math.Min(barWidth - component.bounds.Width,
                                 Math.Max(0, mouseX - (this.AvailableWidth / 2)))
                             : unit * unitWidth;
+
+                        unit = Math.Min(units - 1, Math.Max(0, (int)Math.Round((float)this.offset / unitWidth, 1)));
 
                         IClickableMenu.drawTextureBox(
                             spriteBatch,
@@ -279,9 +285,10 @@ internal sealed class UnlimitedOption : ComplexOption
                             SpriteText.color_Gray);
 
                         continue;
-                }
 
-                continue;
+                    default:
+                        continue;
+                }
             }
 
             if (int.TryParse(component.name, out var index))

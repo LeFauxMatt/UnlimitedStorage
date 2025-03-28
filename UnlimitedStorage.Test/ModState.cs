@@ -1,6 +1,6 @@
 using LeFauxMods.Common.Services;
 
-namespace LeFauxMods.UnlimitedStorage.Test.Services;
+namespace LeFauxMods.UnlimitedStorage.Test;
 
 /// <summary>Responsible for managing state.</summary>
 internal class ModState

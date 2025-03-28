@@ -189,9 +189,9 @@ internal sealed class ModEntry : Mod
 
         var (menu, topMenu, _, inventory, storageOptions) = context;
         var cursor = ModState.Cursor;
+        var maxOffset = storageOptions.GetMaxOffset(inventory.Count);
         if (ModState.Config.ShowArrows && storageOptions.MenuHeight > 1)
         {
-            var maxOffset = storageOptions.GetMaxOffset(inventory.Count);
             ModState.UpArrow.tryHover(cursor.X, cursor.Y);
             ModState.UpArrow.draw(
                 e.SpriteBatch,
@@ -238,6 +238,16 @@ internal sealed class ModEntry : Mod
             ModState.TextBox.Hover(cursor.X, cursor.Y);
             ModState.TextBox.Draw(e.SpriteBatch, false);
         }
+
+#if RELEASE
+        if (ModState.Config.LogAmount is LogAmount.More)
+        {
+#endif
+        e.SpriteBatch.DrawString(Game1.smallFont, $"{ModState.Offset / storageOptions.MenuWidth}/{maxOffset}",
+            Vector2.Zero, Color.White);
+#if RELEASE
+        }
+#endif
 
         menu.drawMouse(e.SpriteBatch);
     }

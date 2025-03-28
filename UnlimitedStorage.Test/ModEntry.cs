@@ -1,6 +1,5 @@
-﻿using LeFauxMods.Common.Integrations.FauxCore;
+using LeFauxMods.Common.Integrations.FauxCore;
 using LeFauxMods.Common.Utilities;
-using LeFauxMods.UnlimitedStorage.Test.Services;
 using StardewModdingAPI.Events;
 
 namespace LeFauxMods.UnlimitedStorage.Test;
