@@ -1,8 +1,12 @@
+using System.Runtime.CompilerServices;
+using LeFauxMods.Common.Models;
 using LeFauxMods.Common.Services;
 using LeFauxMods.Common.Utilities;
+using LeFauxMods.UnlimitedStorage.Models;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI.Utilities;
+using StardewValley.Inventories;
 using StardewValley.Menus;
 using StardewValley.Objects;
 
@@ -13,8 +17,12 @@ internal sealed class ModState
 {
     private static ModState? Instance;
 
-    private readonly PerScreen<int> columns = new();
     private readonly ConfigHelper<ModConfig> configHelper;
+    private readonly IModHelper helper;
+    private readonly PerScreen<int> offset = new();
+
+    private readonly PerScreen<ConditionalWeakTable<IClickableMenu, CachedContext?>> cachedContexts =
+        new(static () => new ConditionalWeakTable<IClickableMenu, CachedContext?>());
 
     private readonly PerScreen<ClickableTextureComponent> downArrow = new(static () =>
         new ClickableTextureComponent(
@@ -22,8 +30,6 @@ internal sealed class ModState
             new Rectangle(421, 472, 11, 12),
             Game1.pixelZoom) { myID = SharedConstants.DownArrowId, upNeighborID = SharedConstants.UpArrowId });
 
-    private readonly IModHelper helper;
-    private readonly PerScreen<int> offset = new();
 
     private readonly PerScreen<TextBox> textBox = new(static () =>
         new TextBox(
@@ -38,10 +44,13 @@ internal sealed class ModState
             new Rectangle(421, 459, 11, 12),
             Game1.pixelZoom) { myID = SharedConstants.UpArrowId, downNeighborID = SharedConstants.DownArrowId });
 
+    private Dictionary<string, StorageOptions>? data;
+
     private ModState(IModHelper helper)
     {
         this.helper = helper;
         this.configHelper = new ConfigHelper<ModConfig>(helper);
+        ModEvents.Subscribe<ConfigChangedEventArgs<ModConfig>>(this.OnConfigChanged);
     }
 
     public static ModConfig Config => Instance!.configHelper.Config;
@@ -52,17 +61,13 @@ internal sealed class ModState
         Utility.ModifyCoordinatesForUIScale(Instance!.helper.Input.GetCursorPosition().GetScaledScreenPixels())
             .ToPoint();
 
+    public static Dictionary<string, StorageOptions> Data => Instance!.data ??= Instance.GetData();
+
     public static ClickableTextureComponent DownArrow => Instance!.downArrow.Value;
 
     public static ClickableTextureComponent UpArrow => Instance!.upArrow.Value;
 
     public static TextBox TextBox => Instance!.textBox.Value;
-
-    public static int Columns
-    {
-        get => Instance!.columns.Value;
-        set => Instance!.columns.Value = value;
-    }
 
     public static int Offset
     {
@@ -72,76 +77,74 @@ internal sealed class ModState
 
     public static void Init(IModHelper helper) => Instance ??= new ModState(helper);
 
-    public static bool TryGetMenu(
-        [NotNullWhen(true)] out ItemGrabMenu? menu,
-        [NotNullWhen(true)] out InventoryMenu? inventoryMenu,
-        [NotNullWhen(true)] out Chest? chest)
+    public static bool TryGetContext([NotNullWhen(true)] out CachedContext? context)
     {
-        if (Game1.activeClickableMenu is not ItemGrabMenu { ItemsToGrabMenu: { } itemsToGrabMenu } itemGrabMenu)
+        switch (Game1.activeClickableMenu)
         {
-            menu = null;
-            inventoryMenu = null;
-            chest = null;
-            return false;
-        }
+            case { } menu when Instance!.cachedContexts.Value.TryGetValue(menu, out context):
+                return context is not null;
 
-        menu = itemGrabMenu;
-        inventoryMenu = itemsToGrabMenu;
-        switch (itemGrabMenu.sourceItem ?? itemGrabMenu.context)
-        {
-            case SObject { heldObject.Value: Chest heldObject } sourceObject
-                when Config.EnabledIds.Contains(sourceObject.ItemId):
-                chest = heldObject;
-                return true;
-            case Chest sourceItem when Config.EnabledIds.Contains(sourceItem.ItemId):
-                chest = sourceItem;
-                return true;
-        }
+            case ItemGrabMenu { ItemsToGrabMenu: { } itemsToGrabMenu, inventory: { } inventoryMenu } itemGrabMenu:
+                StorageOptions? storageOptions = null;
+                var inventory = itemGrabMenu.sourceItem switch
+                {
+                    SObject { heldObject.Value: Chest heldChest } sourceObject when Data.TryGetValue(
+                            sourceObject.ItemId, out storageOptions) &&
+                        storageOptions.Enabled => heldChest.GetItemsForPlayer(),
+                    Chest sourceItem when Data.TryGetValue(sourceItem.ItemId, out storageOptions) &&
+                                          storageOptions.Enabled => sourceItem.GetItemsForPlayer(),
+                    null when itemGrabMenu.context is GameLocation location && location.IsBuildableLocation() &&
+                              Data.TryGetValue(ModConstants.MiniShippingBinId, out storageOptions) &&
+                              storageOptions.Enabled => (location as Farm ?? Game1.getFarm()).getShippingBin(
+                        Game1.player),
+                    _ => null
+                };
 
-        chest = null;
-        return false;
+                context = inventory is not null && storageOptions?.Enabled == true
+                    ? new CachedContext(itemGrabMenu, itemsToGrabMenu, inventoryMenu, inventory, storageOptions)
+                    : null;
+
+                Instance.cachedContexts.Value.AddOrUpdate(itemGrabMenu, context);
+                return context is not null;
+
+            default:
+                context = null;
+                return false;
+        }
     }
 
-    public static bool TryMoveDown(ItemGrabMenu itemGrabMenu, InventoryMenu inventoryMenu, int maxOffset)
+    private static Func<Dictionary<string, string>?> GetCustomFields(string itemId) =>
+        () => Game1.bigCraftableData.TryGetValue(itemId, out var bigCraftableData)
+            ? bigCraftableData.CustomFields
+            : null;
+
+    private void OnConfigChanged(ConfigChangedEventArgs<ModConfig> e)
     {
-        if (Offset >= maxOffset * Columns)
-        {
-            return false;
-        }
-
-        if (itemGrabMenu.currentlySnappedComponent is not { } component)
-        {
-            return false;
-        }
-
-        var bottom = inventoryMenu.GetBorder(InventoryMenu.BorderSide.Bottom);
-        if (!bottom.Contains(component))
-        {
-            return false;
-        }
-
-        Offset += Columns;
-        return true;
+        this.data = null;
+        this.helper.GameContent.InvalidateCache(ModConstants.BigCraftableData);
     }
 
-    public static bool TryMoveUp(ItemGrabMenu itemGrabMenu, InventoryMenu inventoryMenu)
+    private Dictionary<string, StorageOptions> GetData()
     {
-        if (Offset <= 0)
+        this.data ??= new Dictionary<string, StorageOptions>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (itemId, bigCraftableData) in Game1.bigCraftableData)
         {
-            return false;
+            if (bigCraftableData.CustomFields?.GetBool(ModConstants.ModEnabled) != true)
+            {
+                continue;
+            }
+
+            var customFields = new DictionaryModel(GetCustomFields(itemId));
+            _ = this.data.TryAdd(itemId, new StorageOptions(customFields));
         }
 
-        if (itemGrabMenu.currentlySnappedComponent is not { } component)
-        {
-            return false;
-        }
-
-        if (!inventoryMenu.GetBorder(InventoryMenu.BorderSide.Top).Contains(component))
-        {
-            return false;
-        }
-
-        Offset -= Columns;
-        return true;
+        return this.data;
     }
+
+    public record CachedContext(
+        ItemGrabMenu Menu,
+        InventoryMenu TopMenu,
+        InventoryMenu BottomMenu,
+        IInventory Inventory,
+        StorageOptions StorageOptions);
 }
