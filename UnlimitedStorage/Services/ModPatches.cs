@@ -16,6 +16,11 @@ internal static class ModPatches
     private static readonly string EmptySlot = int.MaxValue.ToString(CultureInfo.InvariantCulture);
     private static readonly Harmony Harmony = new(Constants.ModId);
 
+    /// <summary>Record the capacity of chests after method
+    /// <see cref="Chest.GetActualCapacity"/> called.
+    /// Mainly used to make compatibility to other mods.</summary>
+    private static int _actualCapacity;
+
     public static void Apply()
     {
         Log.Info("Applying Patches");
@@ -25,10 +30,6 @@ internal static class ModPatches
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.GetActualCapacity)),
                 postfix: new HarmonyMethod(typeof(ModPatches), nameof(Chest_GetActualCapacity_postfix)));
-
-            _ = Harmony.Patch(
-                AccessTools.DeclaredPropertyGetter(typeof(Chest), nameof(Chest.SpecialChestType)),
-                postfix: new HarmonyMethod(typeof(ModPatches), nameof(Chest_SpecialChestType_postfix)));
 
             _ = Harmony.Patch(
                 AccessTools.DeclaredMethod(typeof(InventoryMenu), nameof(InventoryMenu.draw),
@@ -71,32 +72,14 @@ internal static class ModPatches
         if (Game1.bigCraftableData.TryGetValue(__instance.ItemId, out var data) &&
             data.CustomFields?.GetBool(Constants.ModEnabled) == true)
         {
+            _actualCapacity = ModState.Config.BigChestMenu ? 70 : __result;
             __result = Math.Max(
-                ModState.Config.BigChestMenu ? 70 : __result,
-                Math.Max(__result, __instance.GetItemsForPlayer().Count + 1));
+                _actualCapacity, Math.Max(__result, __instance.GetItemsForPlayer().Count + 1));
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Harmony")]
-    [SuppressMessage("ReSharper", "SuggestBaseTypeForParameter", Justification = "Harmony")]
-    private static void Chest_SpecialChestType_postfix(ref Chest.SpecialChestTypes __result)
-    {
-        if (ModState.Config.BigChestMenu &&
-            __result is Chest.SpecialChestTypes.None or Chest.SpecialChestTypes.JunimoChest)
-        {
-            __result = Chest.SpecialChestTypes.BigChest;
-        }
-    }
-
-    private static int GetActualCapacity(int capacity, object? context) =>
-        (context as Chest)?.SpecialChestType switch
-        {
-            Chest.SpecialChestTypes.MiniShippingBin or Chest.SpecialChestTypes.JunimoChest => 9,
-            Chest.SpecialChestTypes.Enricher => 1,
-            Chest.SpecialChestTypes.BigChest => 70,
-            not null => ModState.Config.BigChestMenu ? 70 : 36,
-            _ => capacity
-        };
+    private static int GetActualCapacity(int _) =>
+        ModState.Config.BigChestMenu ? 70 : _actualCapacity;
 
     private static IEnumerable<CodeInstruction>
         InventoryMenu_draw_transpiler(IEnumerable<CodeInstruction> instructions) =>
@@ -194,7 +177,6 @@ internal static class ModPatches
                 matcher
                     .Advance(1)
                     .InsertAndAdvance(
-                        new CodeInstruction(OpCodes.Ldarg_S, (short)16),
                         CodeInstruction.Call(typeof(ModPatches), nameof(GetActualCapacity)))
             )
             .InstructionEnumeration();
